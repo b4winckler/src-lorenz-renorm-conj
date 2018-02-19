@@ -10,6 +10,20 @@ using namespace mpfr;
 static mp_prec_t precision = 512;
 static mpreal max_sqr_err("1e-200");
 
+// A Lorenz map f is defined on the unit interval, minus the critical point c.
+// It is normalized so that the critical values are 0 and 1; i.e. f(c-) = 1 and
+// f(c+) = 0.
+// The boundary values v0 = f(0) and v1 = f(1) are parameters (and so is c).
+// The critical exponent at c is denoted alpha (and is typically fixed).
+//
+// f is (w0,w1)-renormalizable iff:
+//
+//  *   the first-return map to [l, r] is (affinely conjugate) a Lorenz map,
+//  *   the itinerary of the left/right branch of the first-return map is
+//      w0/w1,
+//  *   l = f^{n1 - 1}(0) and r = f^{n0 - 1}(1), where n0/n1 is the length of the
+//      word w0/w1.
+//
 
 struct lorenz_map {
     std::vector<mpreal> _data;
