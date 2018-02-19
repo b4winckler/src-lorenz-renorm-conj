@@ -7,6 +7,10 @@
 
 using namespace mpfr;
 
+static mp_prec_t precision = 512;
+static mpreal max_sqr_err("1e-200");
+
+
 struct lorenz_map {
     std::vector<mpreal> _data;
     int _alpha;
@@ -95,42 +99,50 @@ void realize_renormalizable_map(
         const std::string &w0, const std::string &w1, const mpreal &c)
 {
     // Find admissible initial guess to Thurston algorithm
+    // TODO: why is it correct to choose pre-orbit of full affine map?
     std::vector<mpreal> x0, x1;
-    realize_orbit_with_itinerary(x0, w1 + w0, c);
-    realize_orbit_with_itinerary(x1, w0 + w1, c);
+    realize_orbit_with_itinerary(x0, (w1 + w0).substr(1), c);
+    realize_orbit_with_itinerary(x1, (w0 + w1).substr(1), c);
     x0.push_back(c);
     x1.push_back(c);
 
     size_t n0 = w0.size(), n1 = w1.size(), n = n0 + n1;
     mpreal sqr_err(1), tmp, v0, v1;
     size_t count = 0;
-    for (; sqr_err > 1e-20 && count < 1e6; ++count) {
-        v0 = x0[2];
-        v1 = x1[2];
-
-        // This ensures a fixed point of the Thurston algorithm fixes v0 and v1
-        x0[n] = x0[n0] + v0 * (x1[n1] - x0[n0]);
-        x1[n] = x0[n0] + v1 * (x1[n1] - x0[n0]);
-
+    for (; sqr_err > max_sqr_err && count < 1e6; ++count) {
         // This is the Thurston pull back step: pull back each point in such a
         // way that a fixed point of the pull back is an actual orbit of the
         // desired Lorenz family.  The magic of this algorithm is that it does
         // converge to a fixed point.
+
+        // *If* x0/x1 was the orbit of 0/1, then the second element is v0/v1
+        v0 = x0[1];
+        v1 = x1[1];
+
+        // This ensures a fixed point of the Thurston algorithm fixes v0 and v1
+        const mpreal &l = x0[n1 - 1], &r = x1[n0 - 1];
+        x0[n - 1] = l + v0 * (r - l);
+        x1[n - 1] = l + v1 * (r - l);
+
+        // debug_vector(x0);
+        // debug_vector(x1);
+
         sqr_err = 0;
-        for (size_t i = 1; i <= n; ++i) {
+        for (size_t i = 1; i < n; ++i) {
             tmp = x0[i - 1];
-            // nb. the '<' ensures x0[0] = c
             pull_back_lorenz(x0[i - 1], x0[i], c, v0, v1, x0[i - 1] < c);
             sqr_err += sqr(tmp - x0[i - 1]);
 
             tmp = x1[i - 1];
-            // nb. the '<=' ensures x1[0] = c
-            pull_back_lorenz(x1[i - 1], x1[i], c, v0, v1, x1[i - 1] <= c);
+            pull_back_lorenz(x1[i - 1], x1[i], c, v0, v1, x1[i - 1] < c);
             sqr_err += sqr(tmp - x1[i - 1]);
         }
     }
 
-    f.set_parameters(c, v0, v1);
+    f.set_parameters(c, x0[1], x1[1]);
+    std::cerr << "thurston: #iterations = " << count << ", error = " << sqrt(sqr_err) << std::endl;
+    // debug_vector(x0);
+    // debug_vector(x1);
 }
 
 // Check if the map which sends x[i] to y[i] is increasing.
@@ -152,6 +164,7 @@ bool is_increasing(const std::vector<mpreal> &x, const std::vector<mpreal> &y)
     return true;
 }
 
+// Compute the orbit x0, f(x0), .., f^{n-1}(x0)
 void orbit(
         // output
         std::vector<mpreal> &x,
@@ -178,6 +191,8 @@ void orbit(
     }
 }
 
+// Check that the critical orbits are ordered in the correct way for f to be
+// (w0,w1)-quasi-renormalizable.
 bool is_quasi_renormalizable(
         const lorenz_map &f, const std::string &w0, const std::string &w1)
 {
@@ -204,11 +219,28 @@ bool is_quasi_renormalizable(
     return is_increasing(x0, y0);
 }
 
+// Compute the (w0,w1)-renormalization of f
 bool renormalize(
         lorenz_map &rf,
         const lorenz_map &f, const std::string &w0, const std::string &w1)
 {
-    return false;
+    if (!is_quasi_renormalizable(f, w0, w1))
+        return false;
+
+    size_t n0 = w0.size(), n1 = w1.size(), n = n0 + n1;
+    std::vector<mpreal> x0(n), x1(n);
+    orbit(x0, 0, n, f);
+    orbit(x1, 1, n, f);
+
+    // The return interval is [l, r] and the image of the first-return map of f
+    // on this interval is [x0[n-1], x1[n-1]]
+    const mpreal &l = x0[n1 - 1], &r = x1[n0 - 1];
+    rf.set_parameters(
+            (f.c() - l) / (r - l),
+            (x0[n - 1] - l) / (r - l),
+            (x1[n - 1] - l) / (r - l));
+
+    return true;
 }
 
 void usage()
@@ -222,7 +254,7 @@ int main(int argc, char *argv[])
     if (argc != 4)
         usage();
 
-    mpreal::set_default_prec(512);
+    mpreal::set_default_prec(precision);
 
     std::string w0(argv[1]);
     std::string w1(argv[2]);
@@ -244,11 +276,20 @@ int main(int argc, char *argv[])
     debug_vector(x);
 #endif
 
+    // Realize a (w0,w1)-renormalizable map with critical point c
     lorenz_map f;
     realize_renormalizable_map(f, w0, w1, c);
-    std::cerr << f.c() << ' ' << f.v0() << ' ' << f.v1() << std::endl;
+    std::cerr << "f = " << f.c() << ' ' << f.v0() << ' ' << f.v1() << std::endl;
     bool b = is_quasi_renormalizable(f, w0, w1);
     std::cerr << "quasi-renormalizable: " << b << std::endl;
+
+    // Renormalize f as many times as possible
+    lorenz_map rf;
+    for (int k = 1; renormalize(rf, f, w0, w1); ++k) {
+        std::cerr << "R^{" << k << "}(f) = " << rf.c() << ' ' << rf.v0() << ' '
+            << rf.v1() << std::endl;
+        f = rf;
+    }
 
     return EXIT_SUCCESS;
 }
