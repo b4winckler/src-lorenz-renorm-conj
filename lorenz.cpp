@@ -240,7 +240,7 @@ bool renormalize(
             (x0[n - 1] - l) / (r - l),
             (x1[n - 1] - l) / (r - l));
 
-    return true;
+    return rf.v0() >= 0 && rf.v0() <= 1 && rf.v1() >= 0 && rf.v1() <= 1;
 }
 
 void usage()
