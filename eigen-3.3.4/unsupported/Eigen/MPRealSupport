@@ -13,7 +13,7 @@
 #define EIGEN_MPREALSUPPORT_MODULE_H
 
 #include <Eigen/Core>
-#include <mpreal.h>
+#include <unsupported/test/mpreal/mpreal.h>
 
 namespace Eigen {
   
