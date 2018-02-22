@@ -7,6 +7,10 @@
 #include <cassert>
 
 using namespace mpfr;
+using namespace Eigen;
+
+typedef Matrix<mpreal, 3, 1> vec3;
+typedef Matrix<mpreal, 3, 3> mat3;
 
 static mp_prec_t precision = 512;
 static mpreal max_sqr_err("1e-200");
@@ -27,17 +31,18 @@ static mpreal max_sqr_err("1e-200");
 //
 
 struct lorenz_map {
-    std::vector<mpreal> _data;
-    int _alpha;
+    vec3 parameters;
+    mat3 jacobian;
+    int d;
 
-    lorenz_map() : _data(3), _alpha(2) { }
-    int alpha() const { return _alpha; }
-    const mpreal &c() const { return _data[0]; }
-    const mpreal &v0() const { return _data[1]; }
-    const mpreal &v1() const { return _data[2]; }
+    lorenz_map() : d(2) { }
+    int alpha() const { return d; }
+    const mpreal &c() const { return parameters[0]; }
+    const mpreal &v0() const { return parameters[1]; }
+    const mpreal &v1() const { return parameters[2]; }
     void set_parameters(const mpreal &c, const mpreal &v0, const mpreal &v1)
     {
-        _data[0] = c; _data[1] = v0; _data[2] = v1;
+        parameters[0] = c; parameters[1] = v0; parameters[2] = v1;
     }
 };
 
@@ -234,6 +239,113 @@ bool is_quasi_renormalizable(
     return is_increasing(x0, y0);
 }
 
+void dadd(
+        mpreal &z, mpreal &dz,
+        const mpreal &x, const mpreal &dx,
+        const mpreal &y, const mpreal &dy)
+{
+    z = x + y;
+    dz = dx + dy;
+}
+
+void dsub(
+        mpreal &z, mpreal &dz,
+        const mpreal &x, const mpreal &dx,
+        const mpreal &y, const mpreal &dy)
+{
+    z = x - y;
+    dz = dx - dy;
+}
+
+void dmul(
+        mpreal &z, mpreal &dz,
+        const mpreal &x, const mpreal &dx,
+        const mpreal &y, const mpreal &dy)
+{
+    z = x * y;
+    dz = dx * y + x * dy;
+}
+
+void ddiv(
+        mpreal &z, mpreal &dz,
+        const mpreal &x, const mpreal &dx,
+        const mpreal &y, const mpreal &dy)
+{
+    z = x / y;
+    dz = (dx * y - x * dy) / (y * y);
+}
+
+void dpow(
+        mpreal &y, mpreal &dy,
+        const mpreal &x, const mpreal &dx, int alpha)
+{
+    y = pow(x, alpha - 1);
+    dy = alpha * y * dx;
+    y = y * x;
+}
+
+void diter(
+        mpreal &y, mpreal &dy,
+        const mpreal &x0, const mpreal &dx0, size_t n,
+        const vec3 &f, const vec3 &df, int alpha)
+{
+    mpreal t, dt;
+
+    y = x0; dy = dx0;
+    for (size_t i = 0; i < n; ++i) {
+        if (y < f[0]) {
+            // Left branch: x -> v0 + (1 - v0) * (1 - pow(1 - x / c, alpha))
+            ddiv(y, dy, y, dy, f[0], df[0]); // y /= c
+            dsub(y, dy, 1, 0, y, dy);       // y = 1 - y
+            dpow(y, dy, y, dy, alpha);      // y = pow(y, alpha)
+            dsub(y, dy, 1, 0, y, dy);       // y = 1 - y
+            dsub(t, dt, 1, 0, f[1], df[1]); // t = 1 - v0
+            dmul(y, dy, y, dy, t, dt);      // y *= t
+            dadd(y, dy, y, dy, f[1], df[1]); // y += v0
+        } else if (y > f[0]) {
+            // Right branch: x -> v1 * pow( (x - c) / (1 - c), alpha)
+            dsub(y, dy, y, dy, f[0], df[0]); // y = y - c
+            dsub(t, dt, 1, 0, f[0], df[0]); // t = 1 - c
+            ddiv(y, dy, y, dy, t, dt);      // y /= t
+            dpow(y, dy, y, dy, alpha);      // y = pow(y, alpha)
+            dmul(y, dy, y, dy, f[2], df[2]); // y *= v1
+        } else {
+            error("attempting to evaluate f at c");
+        }
+    }
+}
+
+void renormalize_internal(
+        vec3 &rf, vec3 &drf,
+        const vec3 &f, const vec3 &df, size_t n0, size_t n1, int alpha)
+{
+    // l = f^{n1 - 1)(0), vl = f^{n0}(l)
+    mpreal l, dl, vl, dvl;
+    diter(l, dl, 0, 0, n1 - 1, f, df, alpha);
+    diter(vl, dvl, l, dl, n0, f, df, alpha);
+
+    // r = f^{n0 - 1)(1), vr = f^{n1}(r)
+    mpreal r, dr, vr, dvr;
+    diter(r, dr, 1, 0, n0 - 1, f, df, alpha);
+    diter(vr, dvr, r, dr, n1, f, df, alpha);
+
+    // s = r - l
+    mpreal s, ds;
+    dsub(s, ds, r, dr, l, dl);
+
+    // rc = (c - l) / (r - l)
+    dsub(rf[0], drf[0], f[0], df[0], l, dl);
+    ddiv(rf[0], drf[0], rf[0], drf[0], s, ds);
+
+    // rv0 = (vl - l) / (r - l)
+    dsub(rf[1], drf[1], vl, dvl, l, dl);
+    ddiv(rf[1], drf[1], rf[1], drf[1], s, ds);
+
+    // rv1 = (vr - l) / (r - l)
+    dsub(rf[2], drf[2], vr, dvr, l, dl);
+    ddiv(rf[2], drf[2], rf[2], drf[2], s, ds);
+}
+
 // Compute the (w0,w1)-renormalization of f
 bool renormalize(
         lorenz_map &rf,
@@ -242,7 +354,9 @@ bool renormalize(
     if (!is_quasi_renormalizable(f, w0, w1))
         return false;
 
-    size_t n0 = w0.size(), n1 = w1.size(), n = n0 + n1;
+    size_t n0 = w0.size(), n1 = w1.size();
+#if 0
+    size_t n = n0 + n1;
     std::vector<mpreal> x0(n), x1(n);
     orbit(x0, 0, n, f);
     orbit(x1, 1, n, f);
@@ -254,6 +368,17 @@ bool renormalize(
             (f.c() - l) / (r - l),
             (x0[n - 1] - l) / (r - l),
             (x1[n - 1] - l) / (r - l));
+#else
+    mat3 id = mat3::Identity();
+    vec3 gradient;
+
+    for (int i = 0; i < 3; ++i) {
+        renormalize_internal(
+                rf.parameters, gradient,
+                f.parameters, id.col(i), n0, n1, f.alpha());
+        rf.jacobian.col(i) = gradient;
+    }
+#endif
 
     return rf.v0() >= 0 && rf.v0() <= 1 && rf.v1() >= 0 && rf.v1() <= 1;
 }
