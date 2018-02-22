@@ -427,11 +427,13 @@ int main(int argc, char *argv[])
 
     // Renormalize f as many times as possible
     lorenz_map rf, f = f0;
-    for (int k = 1; renormalize(rf, f, w0, w1); ++k) {
-        std::cerr << "R^{" << k << "}(f) = " << rf.c() << ' ' << rf.v0() << ' '
-            << rf.v1() << std::endl;
+    int k = 0;
+    for (; renormalize(rf, f, w0, w1); ++k) {
+        // std::cerr << "R^{" << k << "}(f) = " << rf.c() << ' ' << rf.v0() << ' '
+        //     << rf.v1() << std::endl;
         f = rf;
     }
+    std::cerr << "# times renormalizable: " << k << std::endl;
 
     // Print spectrum of derivative at f0
     if (renormalize(rf, f0, w0, w1))
