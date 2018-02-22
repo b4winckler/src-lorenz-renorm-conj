@@ -240,44 +240,44 @@ bool is_quasi_renormalizable(
 }
 
 void dadd(
-        mpreal &z, mpreal &dz,
-        const mpreal &x, const mpreal &dx,
-        const mpreal &y, const mpreal &dy)
+        mpreal &z, vec3 &dz,
+        const mpreal &x, const vec3 &dx,
+        const mpreal &y, const vec3 &dy)
 {
     z = x + y;
     dz = dx + dy;
 }
 
 void dsub(
-        mpreal &z, mpreal &dz,
-        const mpreal &x, const mpreal &dx,
-        const mpreal &y, const mpreal &dy)
+        mpreal &z, vec3 &dz,
+        const mpreal &x, const vec3 &dx,
+        const mpreal &y, const vec3 &dy)
 {
     z = x - y;
     dz = dx - dy;
 }
 
 void dmul(
-        mpreal &z, mpreal &dz,
-        const mpreal &x, const mpreal &dx,
-        const mpreal &y, const mpreal &dy)
+        mpreal &z, vec3 &dz,
+        const mpreal &x, const vec3 &dx,
+        const mpreal &y, const vec3 &dy)
 {
     z = x * y;
     dz = dx * y + x * dy;
 }
 
 void ddiv(
-        mpreal &z, mpreal &dz,
-        const mpreal &x, const mpreal &dx,
-        const mpreal &y, const mpreal &dy)
+        mpreal &z, vec3 &dz,
+        const mpreal &x, const vec3 &dx,
+        const mpreal &y, const vec3 &dy)
 {
     z = x / y;
     dz = (dx * y - x * dy) / (y * y);
 }
 
 void dpow(
-        mpreal &y, mpreal &dy,
-        const mpreal &x, const mpreal &dx, int alpha)
+        mpreal &y, vec3 &dy,
+        const mpreal &x, const vec3 &dx, int alpha)
 {
     y = pow(x, alpha - 1);
     dy = alpha * y * dx;
@@ -285,30 +285,31 @@ void dpow(
 }
 
 void diter(
-        mpreal &y, mpreal &dy,
-        const mpreal &x0, const mpreal &dx0, size_t n,
-        const vec3 &f, const vec3 &df, int alpha)
+        mpreal &y, vec3 &dy,
+        const mpreal &x0, const vec3 &dx0, size_t n,
+        const vec3 &f, int alpha)
 {
-    mpreal t, dt;
+    mpreal t;
+    vec3 dt;
 
     y = x0; dy = dx0;
     for (size_t i = 0; i < n; ++i) {
         if (y < f[0]) {
             // Left branch: x -> v0 + (1 - v0) * (1 - pow(1 - x / c, alpha))
-            ddiv(y, dy, y, dy, f[0], df[0]); // y /= c
-            dsub(y, dy, 1, 0, y, dy);       // y = 1 - y
+            ddiv(y, dy, y, dy, f[0], vec3::UnitX()); // y /= c
+            dsub(y, dy, 1, vec3::Zero(), y, dy);       // y = 1 - y
             dpow(y, dy, y, dy, alpha);      // y = pow(y, alpha)
-            dsub(y, dy, 1, 0, y, dy);       // y = 1 - y
-            dsub(t, dt, 1, 0, f[1], df[1]); // t = 1 - v0
+            dsub(y, dy, 1, vec3::Zero(), y, dy);       // y = 1 - y
+            dsub(t, dt, 1, vec3::Zero(), f[1], vec3::UnitY()); // t = 1 - v0
             dmul(y, dy, y, dy, t, dt);      // y *= t
-            dadd(y, dy, y, dy, f[1], df[1]); // y += v0
+            dadd(y, dy, y, dy, f[1], vec3::UnitY()); // y += v0
         } else if (y > f[0]) {
             // Right branch: x -> v1 * pow( (x - c) / (1 - c), alpha)
-            dsub(y, dy, y, dy, f[0], df[0]); // y = y - c
-            dsub(t, dt, 1, 0, f[0], df[0]); // t = 1 - c
+            dsub(y, dy, y, dy, f[0], vec3::UnitX()); // y = y - c
+            dsub(t, dt, 1, vec3::Zero(), f[0], vec3::UnitX()); // t = 1 - c
             ddiv(y, dy, y, dy, t, dt);      // y /= t
             dpow(y, dy, y, dy, alpha);      // y = pow(y, alpha)
-            dmul(y, dy, y, dy, f[2], df[2]); // y *= v1
+            dmul(y, dy, y, dy, f[2], vec3::UnitZ()); // y *= v1
         } else {
             error("attempting to evaluate f at c");
         }
@@ -316,34 +317,40 @@ void diter(
 }
 
 void renormalize_internal(
-        vec3 &rf, vec3 &drf,
-        const vec3 &f, const vec3 &df, size_t n0, size_t n1, int alpha)
+        vec3 &rf, mat3 &drf,
+        const vec3 &f, size_t n0, size_t n1, int alpha)
 {
     // l = f^{n1 - 1)(0), vl = f^{n0}(l)
-    mpreal l, dl, vl, dvl;
-    diter(l, dl, 0, 0, n1 - 1, f, df, alpha);
-    diter(vl, dvl, l, dl, n0, f, df, alpha);
+    mpreal l, vl;
+    vec3 dl, dvl;
+    diter(l, dl, 0, vec3::Zero(), n1 - 1, f, alpha);
+    diter(vl, dvl, l, dl, n0, f, alpha);
 
     // r = f^{n0 - 1)(1), vr = f^{n1}(r)
-    mpreal r, dr, vr, dvr;
-    diter(r, dr, 1, 0, n0 - 1, f, df, alpha);
-    diter(vr, dvr, r, dr, n1, f, df, alpha);
+    mpreal r, vr;
+    vec3 dr, dvr;
+    diter(r, dr, 1, vec3::Zero(), n0 - 1, f, alpha);
+    diter(vr, dvr, r, dr, n1, f, alpha);
 
     // s = r - l
-    mpreal s, ds;
+    mpreal s;
+    vec3 ds, grad;
     dsub(s, ds, r, dr, l, dl);
 
     // rc = (c - l) / (r - l)
-    dsub(rf[0], drf[0], f[0], df[0], l, dl);
-    ddiv(rf[0], drf[0], rf[0], drf[0], s, ds);
+    dsub(rf[0], grad, f[0], vec3::UnitX(), l, dl);
+    ddiv(rf[0], grad, rf[0], drf.col(0), s, ds);
+    drf.col(0) = grad;
 
     // rv0 = (vl - l) / (r - l)
-    dsub(rf[1], drf[1], vl, dvl, l, dl);
-    ddiv(rf[1], drf[1], rf[1], drf[1], s, ds);
+    dsub(rf[1], grad, vl, dvl, l, dl);
+    ddiv(rf[1], grad, rf[1], grad, s, ds);
+    drf.col(1) = grad;
 
     // rv1 = (vr - l) / (r - l)
-    dsub(rf[2], drf[2], vr, dvr, l, dl);
-    ddiv(rf[2], drf[2], rf[2], drf[2], s, ds);
+    dsub(rf[2], grad, vr, dvr, l, dl);
+    ddiv(rf[2], grad, rf[2], grad, s, ds);
+    drf.col(2) = grad;
 }
 
 // Compute the (w0,w1)-renormalization of f
@@ -369,15 +376,9 @@ bool renormalize(
             (x0[n - 1] - l) / (r - l),
             (x1[n - 1] - l) / (r - l));
 #else
-    mat3 id = mat3::Identity();
-    vec3 gradient;
-
-    for (int i = 0; i < 3; ++i) {
-        renormalize_internal(
-                rf.parameters, gradient,
-                f.parameters, id.col(i), n0, n1, f.alpha());
-        rf.jacobian.col(i) = gradient;
-    }
+    renormalize_internal(
+            rf.parameters, rf.jacobian,
+            f.parameters, n0, n1, f.alpha());
 #endif
 
     return rf.v0() >= 0 && rf.v0() <= 1 && rf.v1() >= 0 && rf.v1() <= 1;
