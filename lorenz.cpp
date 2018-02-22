@@ -1,4 +1,5 @@
 #include <unsupported/Eigen/MPRealSupport>
+#include <Eigen/Eigenvalues>
 
 #include <iostream>
 #include <vector>
@@ -418,19 +419,24 @@ int main(int argc, char *argv[])
 #endif
 
     // Realize a (w0,w1)-renormalizable map with critical point c
-    lorenz_map f;
-    realize_renormalizable_map(f, w0, w1, c);
-    std::cerr << "f = " << f.c() << ' ' << f.v0() << ' ' << f.v1() << std::endl;
-    bool b = is_quasi_renormalizable(f, w0, w1);
+    lorenz_map f0;
+    realize_renormalizable_map(f0, w0, w1, c);
+    std::cerr << "f = " << f0.c() << ' ' << f0.v0() << ' ' << f0.v1() << std::endl;
+    bool b = is_quasi_renormalizable(f0, w0, w1);
     std::cerr << "quasi-renormalizable: " << b << std::endl;
 
     // Renormalize f as many times as possible
-    lorenz_map rf;
+    lorenz_map rf, f = f0;
     for (int k = 1; renormalize(rf, f, w0, w1); ++k) {
         std::cerr << "R^{" << k << "}(f) = " << rf.c() << ' ' << rf.v0() << ' '
             << rf.v1() << std::endl;
         f = rf;
     }
+
+    // Print spectrum of derivative at f0
+    if (renormalize(rf, f0, w0, w1))
+        std::cerr << "spec DR(f) = " << std::endl << rf.jacobian.eigenvalues()
+            << std::endl;
 
     return EXIT_SUCCESS;
 }
