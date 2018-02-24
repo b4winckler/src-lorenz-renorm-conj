@@ -1,4 +1,5 @@
 #include <unsupported/Eigen/MPRealSupport>
+#include <unsupported/Eigen/AutoDiff>
 #include <Eigen/Eigenvalues>
 
 #include <iostream>
@@ -385,6 +386,82 @@ bool renormalize(
     return rf.v0() >= 0 && rf.v0() <= 1 && rf.v1() >= 0 && rf.v1() <= 1;
 }
 
+template <typename t>
+using vec3t = Matrix<t, 3, 1>;
+
+template <typename t>
+using mat3t = Matrix<t, 3, 3>;
+
+// Compute f(x)
+template <typename scalar>
+void apply_lorenz(
+        scalar &y,
+        const scalar &x, const vec3t<scalar> &f)
+{
+    const scalar &c = f[0], &v0 = f[1], &v1 = f[2];
+
+    if (x < c) {
+        // Left branch
+        y = x / c;
+        y = 1 - pow(1 - y, 2);
+        y = v0 + y * (1 - v0);
+    } else if (x > c) {
+        // Right branch
+        y = (x - c) / (1 - c);
+        y = pow(y, 2);
+        y = y * v1;
+    } else {
+        error("attempting to evaluate f at c");
+    }
+}
+
+// Compute f^n(x)
+template <typename scalar>
+void iter_lorenz(
+        scalar &y,
+        const scalar &x, const vec3t<scalar> &f, size_t n)
+{
+    y = x;
+    for (size_t i = 0; i < n; ++i)
+        apply_lorenz(y, y, f);
+}
+
+template <typename scalar>
+struct renormalization_operator {
+    typedef vec3t<scalar> InputType;
+    typedef vec3t<scalar> ValueType;
+
+    std::string w0, w1;
+
+    renormalization_operator(const std::string &w0_, const std::string &w1_)
+        : w0(w0_), w1(w1_) { }
+
+    template <typename t>
+    void operator() (const vec3t<t> &x, vec3t<t> *yp) const
+    {
+        size_t n0 = w0.size(), n1 = w1.size();
+        assert(n0 > 0 && n1 > 0);
+
+        // l = f^{n1 - 1)(0), vl = f^{n0}(l)
+        t l(0), vl;
+        iter_lorenz(l, l, x, n1 - 1);
+        iter_lorenz(vl, l, x, n0);
+
+        // r = f^{n0 - 1)(1), vr = f^{n1}(r)
+        t r(1), vr;
+        iter_lorenz(r, r, x, n0 - 1);
+        iter_lorenz(vr, r, x, n1);
+
+        // The return interval is [l, r] and the image of the first-return map
+        // of f on this interval is [vl, vr]
+        t c = x(0);
+        *yp <<
+            (c - l) / (r - l),
+            (vl - l) / (r - l),
+            (vr - l) / (r - l);
+    }
+};
+
 void usage()
 {
     std::cerr << "usage: lorenz w0 w1 c\n\n";
@@ -436,9 +513,20 @@ int main(int argc, char *argv[])
     std::cerr << "# times renormalizable: " << k << std::endl;
 
     // Print spectrum of derivative at f0
-    if (renormalize(rf, f0, w0, w1))
-        std::cerr << "spec DR(f) = " << std::endl << rf.jacobian.eigenvalues()
-            << std::endl;
+    if (renormalize(rf, f0, w0, w1)) {
+        std::cerr << "[DUAL] R(f) =\n\t" << rf.parameters.transpose() << std::endl;
+        std::cerr << "[DUAL] spec DR(f) =\n\t" << rf.jacobian.eigenvalues().transpose() <<
+            std::endl;
+    }
+
+    vec3t<mpreal> y;
+    mat3t<mpreal> jac;
+    renormalization_operator<mpreal> op(w0, w1);
+    AutoDiffJacobian< renormalization_operator<mpreal> > ad_op(op);
+    ad_op(f0.parameters, &y, &jac);
+
+    std::cerr << "[AD] R(f) =\n\t" << y.transpose() << std::endl;
+    std::cerr << "[AD] spec DR(f) =\n\t" << jac.eigenvalues().transpose() << std::endl;
 
     return EXIT_SUCCESS;
 }
