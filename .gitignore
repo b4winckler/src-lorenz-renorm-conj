@@ -1,4 +1,5 @@
 *.o
 .*.swp
 lorenz
+test
 thurston
