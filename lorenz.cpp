@@ -11,11 +11,24 @@
 using namespace mpfr;
 using namespace Eigen;
 
-typedef Matrix<mpreal, 3, 1> vec3;
-typedef Matrix<mpreal, 3, 3> mat3;
+template <typename t>
+using vec3 = Matrix<t, 3, 1>;
+
+template <typename t>
+using vecN = Matrix<t, Dynamic, 1>;
+
+template <typename t>
+using mat3 = Matrix<t, 3, 3>;
 
 static mp_prec_t precision = 512;
 static mpreal max_sqr_err("1e-200");
+
+
+void error(const char *msg)
+{
+    std::cerr << __FILE__ << ':' << __LINE__ << ' ' << msg << std::endl;
+    exit(EXIT_FAILURE);
+}
 
 // A Lorenz map f is defined on the unit interval, minus the critical point c.
 // It is normalized so that the critical values are 0 and 1; i.e. f(c-) = 1 and
@@ -32,27 +45,74 @@ static mpreal max_sqr_err("1e-200");
 //      word w0/w1.
 //
 
+template <typename scalar>
 struct lorenz_map {
-    vec3 parameters;
-    mat3 jacobian;
+    vec3<scalar> parameters;
     int d;
 
     lorenz_map() : d(2) { }
+    lorenz_map(const vec3<scalar> &parameters_)  : parameters(parameters_), d(2) {}
+
     int alpha() const { return d; }
-    const mpreal &c() const { return parameters[0]; }
-    const mpreal &v0() const { return parameters[1]; }
-    const mpreal &v1() const { return parameters[2]; }
-    void set_parameters(const mpreal &c, const mpreal &v0, const mpreal &v1)
+    const scalar &c() const { return parameters[0]; }
+    const scalar &v0() const { return parameters[1]; }
+    const scalar &v1() const { return parameters[2]; }
+    void set_parameters(const scalar &c, const scalar &v0, const scalar &v1)
     {
         parameters[0] = c; parameters[1] = v0; parameters[2] = v1;
     }
-};
 
-void error(const char *msg)
-{
-    std::cerr << __FILE__ << ':' << __LINE__ << ' ' << msg << std::endl;
-    exit(EXIT_FAILURE);
-}
+    // Compute f(x)
+    void apply(scalar &y, const scalar &x) const
+    {
+        if (x < c()) {
+            // Left branch
+            y = x / c();
+            y = 1 - pow(1 - y, 2);
+            y = v0() + y * (1 - v0());
+        } else if (x > c()) {
+            // Right branch
+            y = (x - c()) / (1 - c());
+            y = pow(y, 2);
+            y = y * v1();
+        } else {
+            error("attempting to evaluate f at c");
+        }
+    }
+
+    // Compute f^{-1}(x)
+    void pull_back(scalar &y, const scalar &x, int left_branch) const
+    {
+        if (left_branch) {
+            y = (x - v0()) / (1 - v0());
+            y = 1 - sqrt(1 - y);
+            y = y * c();
+        } else {
+            y = x / v1();
+            y = sqrt(y);
+            y = c() + (1 - c()) * y;
+        }
+    }
+
+    // Compute f^n(x)
+    void iterate(scalar &y, const scalar &x, size_t n) const
+    {
+        y = x;
+        for (size_t i = 0; i < n; ++i)
+            apply(y, y);
+    }
+
+    // Compute x, f(x), ..., f^n(x)
+    void orbit(vecN<scalar> &y, const scalar &x, size_t n) const
+    {
+        if (y.size() < n)
+            y.resize(n);
+
+        y[0] = x;
+        for (size_t i = 1; i < n; ++i)
+            apply(y[i], y[i - 1]);
+    }
+};
 
 void debug_vector(const std::vector<mpreal> &x)
 {
@@ -116,20 +176,21 @@ void pull_back_lorenz(
 // Realize a (w0,w1)-renormalizable Lorenz map using the Thurston algorithm.
 // The resulting map has the property that its parameters (v0, v1) are fixed
 // under renormalization.
+template <typename scalar>
 void realize_renormalizable_map(
-        lorenz_map &f,
-        const std::string &w0, const std::string &w1, const mpreal &c)
+        lorenz_map<scalar> &f,
+        const std::string &w0, const std::string &w1, const scalar &c)
 {
     // Find admissible initial guess to Thurston algorithm
     // TODO: why is it correct to choose pre-orbit of full affine map?
-    std::vector<mpreal> x0, x1;
+    std::vector<scalar> x0, x1;
     realize_orbit_with_itinerary(x0, (w1 + w0).substr(1), c);
     realize_orbit_with_itinerary(x1, (w0 + w1).substr(1), c);
     x0.push_back(c);
     x1.push_back(c);
 
     size_t n0 = w0.size(), n1 = w1.size(), n = n0 + n1;
-    mpreal sqr_err(1), tmp, v0, v1;
+    scalar sqr_err(1), tmp, v0, v1;
     size_t count = 0;
     for (; sqr_err > max_sqr_err && count < 1e6; ++count) {
         // This is the Thurston pull back step: pull back each point in such a
@@ -142,7 +203,7 @@ void realize_renormalizable_map(
         v1 = x1[1];
 
         // This ensures a fixed point of the Thurston algorithm fixes v0 and v1
-        const mpreal &l = x0[n1 - 1], &r = x1[n0 - 1];
+        const scalar &l = x0[n1 - 1], &r = x1[n0 - 1];
         x0[n - 1] = l + v0 * (r - l);
         x1[n - 1] = l + v1 * (r - l);
 
@@ -187,11 +248,12 @@ bool is_increasing(const std::vector<mpreal> &x, const std::vector<mpreal> &y)
 }
 
 // Compute the orbit x0, f(x0), .., f^{n-1}(x0)
+template <typename scalar>
 void orbit(
         // output
         std::vector<mpreal> &x,
         // input
-        const mpreal &x0, size_t n, const lorenz_map &f)
+        const mpreal &x0, size_t n, const lorenz_map<scalar> &f)
 {
     x.resize(n);
     x[0] = x0;
@@ -215,8 +277,9 @@ void orbit(
 
 // Check that the critical orbits are ordered in the correct way for f to be
 // (w0,w1)-quasi-renormalizable.
+template <typename scalar>
 bool is_quasi_renormalizable(
-        const lorenz_map &f, const std::string &w0, const std::string &w1)
+        const lorenz_map<scalar> &f, const std::string &w0, const std::string &w1)
 {
     size_t n0 = w0.size(), n1 = w1.size();
     if (!(n0 > 0 && n1 > 0))
@@ -226,13 +289,13 @@ bool is_quasi_renormalizable(
 
     // Realize (w0,w1)-quasi-renormalizable itineraries
     size_t n = n0 + n1 - 1;
-    std::vector<mpreal> y0, y1;
+    std::vector<scalar> y0, y1;
     realize_orbit_with_itinerary(y0, (w1 + w0).substr(1, n), f.c());
     realize_orbit_with_itinerary(y1, (w0 + w1).substr(1, n), f.c());
     y0.insert(y0.end(), y1.begin(), y1.end());
 
     // Determine the orbits of the critical values 0 and 1 under f
-    std::vector<mpreal> x0(n), x1(n);
+    std::vector<scalar> x0(n), x1(n);
     orbit(x0, 0, n, f);
     orbit(x1, 1, n, f);
     x0.insert(x0.end(), x1.begin(), x1.end());
@@ -241,50 +304,10 @@ bool is_quasi_renormalizable(
     return is_increasing(x0, y0);
 }
 
-template <typename t>
-using vec3t = Matrix<t, 3, 1>;
-
-template <typename t>
-using mat3t = Matrix<t, 3, 3>;
-
-// Compute f(x)
-template <typename scalar>
-void apply_lorenz(
-        scalar &y,
-        const scalar &x, const vec3t<scalar> &f)
-{
-    const scalar &c = f[0], &v0 = f[1], &v1 = f[2];
-
-    if (x < c) {
-        // Left branch
-        y = x / c;
-        y = 1 - pow(1 - y, 2);
-        y = v0 + y * (1 - v0);
-    } else if (x > c) {
-        // Right branch
-        y = (x - c) / (1 - c);
-        y = pow(y, 2);
-        y = y * v1;
-    } else {
-        error("attempting to evaluate f at c");
-    }
-}
-
-// Compute f^n(x)
-template <typename scalar>
-void iter_lorenz(
-        scalar &y,
-        const scalar &x, const vec3t<scalar> &f, size_t n)
-{
-    y = x;
-    for (size_t i = 0; i < n; ++i)
-        apply_lorenz(y, y, f);
-}
-
 template <typename scalar>
 struct renormalization_operator {
-    typedef vec3t<scalar> InputType;
-    typedef vec3t<scalar> ValueType;
+    typedef vec3<scalar> InputType;
+    typedef vec3<scalar> ValueType;
 
     std::string w0, w1;
 
@@ -292,26 +315,27 @@ struct renormalization_operator {
         : w0(w0_), w1(w1_) { }
 
     template <typename t>
-    void operator() (const vec3t<t> &x, vec3t<t> *yp) const
+    void operator() (const vec3<t> &x, vec3<t> *py) const
     {
+        lorenz_map<t> f(x);
+
         size_t n0 = w0.size(), n1 = w1.size();
         assert(n0 > 0 && n1 > 0);
 
         // l = f^{n1 - 1)(0), vl = f^{n0}(l)
         t l(0), vl;
-        iter_lorenz(l, l, x, n1 - 1);
-        iter_lorenz(vl, l, x, n0);
+        f.iterate(l, l, n1 - 1);
+        f.iterate(vl, l, n0);
 
         // r = f^{n0 - 1)(1), vr = f^{n1}(r)
         t r(1), vr;
-        iter_lorenz(r, r, x, n0 - 1);
-        iter_lorenz(vr, r, x, n1);
+        f.iterate(r, r, n0 - 1);
+        f.iterate(vr, r, n1);
 
         // The return interval is [l, r] and the image of the first-return map
         // of f on this interval is [vl, vr]
-        t c = x(0);
-        *yp <<
-            (c - l) / (r - l),
+        *py <<
+            (f.c() - l) / (r - l),
             (vl - l) / (r - l),
             (vr - l) / (r - l);
     }
@@ -351,20 +375,21 @@ int main(int argc, char *argv[])
 #endif
 
     // Realize a (w0,w1)-renormalizable map with critical point c
-    lorenz_map f0;
+    lorenz_map<mpreal> f0;
     realize_renormalizable_map(f0, w0, w1, c);
     std::cerr << "f = " << f0.c() << ' ' << f0.v0() << ' ' << f0.v1() << std::endl;
     bool b = is_quasi_renormalizable(f0, w0, w1);
     std::cerr << "quasi-renormalizable: " << b << std::endl;
 
-    vec3t<mpreal> y;
-    mat3t<mpreal> jac;
+    vec3<mpreal> y;
+    mat3<mpreal> jac;
     renormalization_operator<mpreal> op(w0, w1);
     AutoDiffJacobian< renormalization_operator<mpreal> > ad_op(op);
     ad_op(f0.parameters, &y, &jac);
 
-    std::cerr << "[AD] R(f) =\n\t" << y.transpose() << std::endl;
-    std::cerr << "[AD] spec DR(f) =\n\t" << jac.eigenvalues().transpose() << std::endl;
+    std::cerr << "R(f) =\n\t" << y.transpose() << std::endl;
+    std::cerr << "spec DR(f) =\n\t" << jac.eigenvalues().transpose() <<
+        std::endl;
 
     return EXIT_SUCCESS;
 }
