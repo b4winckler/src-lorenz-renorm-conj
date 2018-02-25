@@ -24,10 +24,22 @@ using mat3 = Matrix<t, 3, 3>;
 static mp_prec_t precision = 512;
 static mpreal max_sqr_err("1e-200");
 
+// Examples of combinatorics:
+//
+// once (8,2)-renormalizable
+// LRRRRRRRR RLL
+// twice (8,2)-renormalizable
+// LRRRRRRRRRLLRLLRLLRLLRLLRLLRLLRLL RLLLRRRRRRRRLRRRRRRRR
+//
+// once (6,2)-renormalizale
+// LRRRRRR RLL
+// twice (6,2)-renormalizale
+// LRRRRRRRLLRLLRLLRLLRLLRLL RLLLRRRRRRLRRRRRR
+
 
 void error(const char *msg)
 {
-    std::cerr << __FILE__ << ':' << __LINE__ << ' ' << msg << std::endl;
+    std::cerr << __FILE__ << ':' << __LINE__ << ": " << msg << std::endl;
     exit(EXIT_FAILURE);
 }
 
@@ -352,27 +364,34 @@ struct renormalization_operator {
 // (to determine c).
 template <typename scalar>
 void realize_fixed_point(lorenz_map<scalar> &f,
-        const std::string &w0, const std::string &w1, bool verbose)
+        const std::string &w0, const std::string &w1, const scalar &c0, bool verbose)
 {
     renormalization_operator<scalar> op(w0, w1);
     AutoDiffJacobian< renormalization_operator<scalar> > renormalize(op);
     vec3<scalar> y, h;
     mat3<scalar> jacobian;
-    scalar sqr_err(1);
+    scalar sqr_err(1), c = c0;
     size_t count = 0;
 
     for (; sqr_err > max_sqr_err && count < 1e6; ++count) {
         // Determine v0 and v1
-        realize_renormalizable_map(f, w0, w1, f.c(), false);
+        realize_renormalizable_map(f, w0, w1, c, false);
 
         // Take a Newton step
         renormalize(f.parameters, &y, &jacobian);
         auto lu = (jacobian - mat3<scalar>::Identity()).fullPivLu();
         h = lu.solve(y - f.parameters);
-        f.parameters[0] -= h[0];
+        // std::cerr << "x = " << f.parameters.transpose() << "\ny = " <<
+        //     y.transpose() << "\nh = " << h.transpose() << std::endl;
+        c -= h[0];
+
+        if (c < 0 || c > 1)
+            error("newton step moved critical point outside (0,1)");
 
         sqr_err = h[0] * h[0];
     }
+
+    f.parameters[0] = c;
 
     if (verbose) {
         std::cerr << "newton: #iterations = " << count << ", error = " <<
@@ -430,13 +449,12 @@ int main(int argc, char *argv[])
     std::cerr << "spec DR(f) =\n\t" << jac.eigenvalues().transpose() <<
         std::endl;
 
-    realize_fixed_point(f0, w0, w1, true);
+    realize_fixed_point(f0, w0, w1, c, true);
     std::cerr << "fixed point f0 =\n\t" << f0.parameters.transpose() << std::endl;
     renormalize(f0.parameters, &y, &jac);
     std::cerr << "R(f0) =\n\t" << y.transpose() << std::endl;
     std::cerr << "spec DR(f0) =\n\t" << jac.eigenvalues().transpose() <<
         std::endl;
-
 
     return EXIT_SUCCESS;
 }
