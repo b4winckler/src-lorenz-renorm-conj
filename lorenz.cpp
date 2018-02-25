@@ -1,6 +1,7 @@
 #include <unsupported/Eigen/MPRealSupport>
 #include <unsupported/Eigen/AutoDiff>
 #include <Eigen/Eigenvalues>
+#include <Eigen/LU>
 
 #include <iostream>
 #include <vector>
@@ -179,7 +180,8 @@ void pull_back_lorenz(
 template <typename scalar>
 void realize_renormalizable_map(
         lorenz_map<scalar> &f,
-        const std::string &w0, const std::string &w1, const scalar &c)
+        const std::string &w0, const std::string &w1, const scalar &c,
+        bool verbose)
 {
     // Find admissible initial guess to Thurston algorithm
     // TODO: why is it correct to choose pre-orbit of full affine map?
@@ -223,9 +225,12 @@ void realize_renormalizable_map(
     }
 
     f.set_parameters(c, x0[1], x1[1]);
-    std::cerr << "thurston: #iterations = " << count << ", error = " << sqrt(sqr_err) << std::endl;
-    // debug_vector(x0);
-    // debug_vector(x1);
+    if (verbose) {
+        std::cerr << "thurston: #iterations = " << count << ", error = " <<
+            sqrt(sqr_err) << std::endl;
+        // debug_vector(x0);
+        // debug_vector(x1);
+    }
 }
 
 // Check if the map which sends x[i] to y[i] is increasing.
@@ -341,6 +346,40 @@ struct renormalization_operator {
     }
 };
 
+// Find a fixed point of the (w0,w1)-renormalization operator.
+// The issue lies in determining c.  To improve chances of convergence we
+// combine the Thurston algorithm (to determine v0, v1) and a Newton iteration
+// (to determine c).
+template <typename scalar>
+void realize_fixed_point(lorenz_map<scalar> &f,
+        const std::string &w0, const std::string &w1, bool verbose)
+{
+    renormalization_operator<scalar> op(w0, w1);
+    AutoDiffJacobian< renormalization_operator<scalar> > renormalize(op);
+    vec3<scalar> y, h;
+    mat3<scalar> jacobian;
+    scalar sqr_err(1);
+    size_t count = 0;
+
+    for (; sqr_err > max_sqr_err && count < 1e6; ++count) {
+        // Determine v0 and v1
+        realize_renormalizable_map(f, w0, w1, f.c(), false);
+
+        // Take a Newton step
+        renormalize(f.parameters, &y, &jacobian);
+        auto lu = (jacobian - mat3<scalar>::Identity()).fullPivLu();
+        h = lu.solve(y - f.parameters);
+        f.parameters[0] -= h[0];
+
+        sqr_err = h[0] * h[0];
+    }
+
+    if (verbose) {
+        std::cerr << "newton: #iterations = " << count << ", error = " <<
+            sqrt(sqr_err) << std::endl;
+    }
+}
+
 void usage()
 {
     std::cerr << "usage: lorenz w0 w1 c\n\n";
@@ -376,7 +415,7 @@ int main(int argc, char *argv[])
 
     // Realize a (w0,w1)-renormalizable map with critical point c
     lorenz_map<mpreal> f0;
-    realize_renormalizable_map(f0, w0, w1, c);
+    realize_renormalizable_map(f0, w0, w1, c, true);
     std::cerr << "f = " << f0.c() << ' ' << f0.v0() << ' ' << f0.v1() << std::endl;
     bool b = is_quasi_renormalizable(f0, w0, w1);
     std::cerr << "quasi-renormalizable: " << b << std::endl;
@@ -384,12 +423,20 @@ int main(int argc, char *argv[])
     vec3<mpreal> y;
     mat3<mpreal> jac;
     renormalization_operator<mpreal> op(w0, w1);
-    AutoDiffJacobian< renormalization_operator<mpreal> > ad_op(op);
-    ad_op(f0.parameters, &y, &jac);
+    AutoDiffJacobian< renormalization_operator<mpreal> > renormalize(op);
+    renormalize(f0.parameters, &y, &jac);
 
     std::cerr << "R(f) =\n\t" << y.transpose() << std::endl;
     std::cerr << "spec DR(f) =\n\t" << jac.eigenvalues().transpose() <<
         std::endl;
+
+    realize_fixed_point(f0, w0, w1, true);
+    std::cerr << "fixed point f0 =\n\t" << f0.parameters.transpose() << std::endl;
+    renormalize(f0.parameters, &y, &jac);
+    std::cerr << "R(f0) =\n\t" << y.transpose() << std::endl;
+    std::cerr << "spec DR(f0) =\n\t" << jac.eigenvalues().transpose() <<
+        std::endl;
+
 
     return EXIT_SUCCESS;
 }
