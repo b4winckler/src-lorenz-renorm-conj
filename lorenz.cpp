@@ -381,6 +381,49 @@ void realize_fixed_point(lorenz_map<scalar> &f,
     f.parameters[0] = c;
 
     if (verbose) {
+        std::cerr << "newton+thurston: #iterations = " << count << ", error = " <<
+            sqrt(sqr_err) << std::endl;
+    }
+}
+
+// Find a fixed point of the (w0,w1)-renormalization operator using Newton
+// iteration
+template <typename scalar>
+void realize_fixed_point_newton(lorenz_map<scalar> &f,
+        const std::string &w0, const std::string &w1,
+        const lorenz_map<scalar> f0, bool verbose)
+{
+    renormalization_operator<scalar> op(w0, w1, f.alpha());
+    AutoDiffJacobian< renormalization_operator<scalar> > renormalize(op);
+    vec3<scalar> y, h;
+    mat3<scalar> jacobian;
+    scalar sqr_err(1);
+    size_t count = 0;
+
+    f = f0;
+    if (!is_quasi_renormalizable(f, w0, w1)) {
+        if (verbose) std::cerr << "starting guess not quasi-renormalizable\n";
+        realize_renormalizable_map(f, w0, w1, f.c(), false);
+    }
+
+    for (; sqr_err > max_sqr_err && count < 1e6; ++count) {
+        // Take a Newton step
+        renormalize(f.parameters, &y, &jacobian);
+        auto lu = (jacobian - mat3<scalar>::Identity()).fullPivLu();
+        h = lu.solve(y - f.parameters);
+        f.parameters -= h;
+
+        if (f.c() < 0 || f.c() > 1)
+            error("newton step moved critical point outside (0,1)");
+        if (f.v0() < 0 || f.v0() > 1)
+            error("newton step moved v0 outside (0,1)");
+        if (f.v1() < 0 || f.v1() > 1)
+            error("newton step moved v1 outside (0,1)");
+
+        sqr_err = h.squaredNorm();
+    }
+
+    if (verbose) {
         std::cerr << "newton: #iterations = " << count << ", error = " <<
             sqrt(sqr_err) << std::endl;
     }
@@ -442,11 +485,19 @@ int main(int argc, char *argv[])
     std::cerr << "spec DR(f) =\n\t" << jac.eigenvalues().transpose() <<
         std::endl;
 
-    realize_fixed_point(f0, w0, w1, c, true);
-    std::cerr << "fixed point f0 =\n\t" << f0.parameters.transpose() << std::endl;
-    renormalize(f0.parameters, &y, &jac);
-    std::cerr << "R(f0) =\n\t" << y.transpose() << std::endl;
-    std::cerr << "spec DR(f0) =\n\t" << jac.eigenvalues().transpose() <<
+    lorenz_map<mpreal> f(alpha);
+    realize_fixed_point(f, w0, w1, c, true);
+    std::cerr << "fixed point f =\n\t" << f.parameters.transpose() << std::endl;
+    renormalize(f.parameters, &y, &jac);
+    std::cerr << "R(f) =\n\t" << y.transpose() << std::endl;
+    std::cerr << "spec DR(f) =\n\t" << jac.eigenvalues().transpose() <<
+        std::endl;
+
+    realize_fixed_point_newton(f, w0, w1, f0, true);
+    std::cerr << "fixed point f =\n\t" << f.parameters.transpose() << std::endl;
+    renormalize(f.parameters, &y, &jac);
+    std::cerr << "R(f) =\n\t" << y.transpose() << std::endl;
+    std::cerr << "spec DR(f) =\n\t" << jac.eigenvalues().transpose() <<
         std::endl;
 
     return EXIT_SUCCESS;
