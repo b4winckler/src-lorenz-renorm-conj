@@ -61,12 +61,13 @@ void error(const char *msg)
 template <typename scalar>
 struct lorenz_map {
     vec3<scalar> parameters;
-    int d;
+    mpreal d;
 
-    lorenz_map() : d(2) { }
-    lorenz_map(const vec3<scalar> &parameters_)  : parameters(parameters_), d(2) {}
+    lorenz_map(const mpreal &alpha_) : d(alpha_) { }
+    lorenz_map(const vec3<scalar> &parameters_, const mpreal &alpha_)
+        : parameters(parameters_), d(alpha_) {}
 
-    int alpha() const { return d; }
+    mpreal alpha() const { return d; }
     const scalar &c() const { return parameters[0]; }
     const scalar &v0() const { return parameters[1]; }
     const scalar &v1() const { return parameters[2]; }
@@ -81,12 +82,12 @@ struct lorenz_map {
         if (x < c()) {
             // Left branch
             y = x / c();
-            y = 1 - pow(1 - y, 2);
+            y = 1 - pow(1 - y, alpha());
             y = v0() + y * (1 - v0());
         } else if (x > c()) {
             // Right branch
             y = (x - c()) / (1 - c());
-            y = pow(y, 2);
+            y = pow(y, alpha());
             y = y * v1();
         } else {
             error("attempting to evaluate f at c");
@@ -98,11 +99,11 @@ struct lorenz_map {
     {
         if (left_branch) {
             y = (x - v0()) / (1 - v0());
-            y = 1 - sqrt(1 - y);
+            y = 1 - pow(1 - y, 1 / alpha());
             y = y * c();
         } else {
             y = x / v1();
-            y = sqrt(y);
+            y = pow(y, 1 / alpha());
             y = c() + (1 - c()) * y;
         }
     }
@@ -168,24 +169,6 @@ void realize_orbit_with_itinerary(
         x[n] = w[n] == 'L' ? c - (1 - y) * c : c + y * (1 - c);
 }
 
-void pull_back_lorenz(
-        // output
-        mpreal &y,
-        // input
-        const mpreal &x, const mpreal &c, const mpreal &v0, const mpreal &v1,
-        int left)
-{
-    if (left) {
-        y = (x - v0) / (1 - v0);
-        y = 1 - sqrt(1 - y);
-        y = y * c;
-    } else {
-        y = x / v1;
-        y = sqrt(y);
-        y = c + (1 - c) * y;
-    }
-}
-
 // Realize a (w0,w1)-renormalizable Lorenz map using the Thurston algorithm.
 // The resulting map has the property that its parameters (v0, v1) are fixed
 // under renormalization.
@@ -215,6 +198,7 @@ void realize_renormalizable_map(
         // *If* x0/x1 was the orbit of 0/1, then the second element is v0/v1
         v0 = x0[1];
         v1 = x1[1];
+        f.set_parameters(c, v0, v1);
 
         // This ensures a fixed point of the Thurston algorithm fixes v0 and v1
         const scalar &l = x0[n1 - 1], &r = x1[n0 - 1];
@@ -227,11 +211,11 @@ void realize_renormalizable_map(
         sqr_err = 0;
         for (size_t i = 1; i < n; ++i) {
             tmp = x0[i - 1];
-            pull_back_lorenz(x0[i - 1], x0[i], c, v0, v1, x0[i - 1] < c);
+            f.pull_back(x0[i - 1], x0[i], x0[i - 1] < c);
             sqr_err += sqr(tmp - x0[i - 1]);
 
             tmp = x1[i - 1];
-            pull_back_lorenz(x1[i - 1], x1[i], c, v0, v1, x1[i - 1] < c);
+            f.pull_back(x1[i - 1], x1[i], x1[i - 1] < c);
             sqr_err += sqr(tmp - x1[i - 1]);
         }
     }
@@ -327,14 +311,16 @@ struct renormalization_operator {
     typedef vec3<scalar> ValueType;
 
     std::string w0, w1;
+    mpreal alpha;
 
-    renormalization_operator(const std::string &w0_, const std::string &w1_)
-        : w0(w0_), w1(w1_) { }
+    renormalization_operator(const std::string &w0_, const std::string &w1_,
+            const mpreal &alpha_)
+        : w0(w0_), w1(w1_), alpha(alpha_) { }
 
     template <typename t>
     void operator() (const vec3<t> &x, vec3<t> *py) const
     {
-        lorenz_map<t> f(x);
+        lorenz_map<t> f(x, alpha);
 
         size_t n0 = w0.size(), n1 = w1.size();
         assert(n0 > 0 && n1 > 0);
@@ -364,9 +350,10 @@ struct renormalization_operator {
 // (to determine c).
 template <typename scalar>
 void realize_fixed_point(lorenz_map<scalar> &f,
-        const std::string &w0, const std::string &w1, const scalar &c0, bool verbose)
+        const std::string &w0, const std::string &w1, const scalar &c0,
+        bool verbose)
 {
-    renormalization_operator<scalar> op(w0, w1);
+    renormalization_operator<scalar> op(w0, w1, f.alpha());
     AutoDiffJacobian< renormalization_operator<scalar> > renormalize(op);
     vec3<scalar> y, h;
     mat3<scalar> jacobian;
@@ -401,20 +388,21 @@ void realize_fixed_point(lorenz_map<scalar> &f,
 
 void usage()
 {
-    std::cerr << "usage: lorenz w0 w1 c\n\n";
+    std::cerr << "usage: lorenz w0 w1 c alpha\n\n";
     exit(EXIT_FAILURE);
 }
 
 int main(int argc, char *argv[])
 {
-    if (argc != 4)
+    if (argc != 5)
         usage();
 
     mpreal::set_default_prec(precision);
 
     std::string w0(argv[1]);
     std::string w1(argv[2]);
-    mpreal c(atof(argv[3]));
+    mpreal c(argv[3]);
+    mpreal alpha(argv[4]);
 
     if (!is_admissible(w0, w1)) {
         std::cerr << "inadmissible combinatorics" << std::endl;
@@ -426,6 +414,11 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    if (!(alpha > 1)) {
+        std::cerr << "critical exponent must be strictly larger than 1" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
 #if 0
     std::vector<mpreal> x;
     realize_orbit_with_itinerary(x, w0 + w1, c);
@@ -433,7 +426,7 @@ int main(int argc, char *argv[])
 #endif
 
     // Realize a (w0,w1)-renormalizable map with critical point c
-    lorenz_map<mpreal> f0;
+    lorenz_map<mpreal> f0(alpha);
     realize_renormalizable_map(f0, w0, w1, c, true);
     std::cerr << "f = " << f0.c() << ' ' << f0.v0() << ' ' << f0.v1() << std::endl;
     bool b = is_quasi_renormalizable(f0, w0, w1);
@@ -441,7 +434,7 @@ int main(int argc, char *argv[])
 
     vec3<mpreal> y;
     mat3<mpreal> jac;
-    renormalization_operator<mpreal> op(w0, w1);
+    renormalization_operator<mpreal> op(w0, w1, f0.alpha());
     AutoDiffJacobian< renormalization_operator<mpreal> > renormalize(op);
     renormalize(f0.parameters, &y, &jac);
 
