@@ -429,6 +429,50 @@ void realize_fixed_point_newton(lorenz_map<scalar> &f,
     }
 }
 
+void print_monotone_type_fixed_points()
+{
+    std::vector<mpreal> alphas = { 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 10, 20 };
+    std::string w0 = "LR";
+
+    std::cout << "#w0\tw1\talpha\tc\tv0\tv1\teval0\teval1\teval2" << std::endl;
+
+    for (;;) {
+        for (const mpreal &alpha : alphas) {
+            lorenz_map<mpreal> f(alpha);
+            f.set_parameters(0.5, 0, 1);
+            std::string w1(w0.size(), 'L');
+            w1[0] = 'R';
+
+            while (w1.size() > 1) {
+                realize_fixed_point(f, w0, w1, f.c(), true);
+
+                renormalization_operator<mpreal> op(w0, w1, f.alpha());
+                AutoDiffJacobian< renormalization_operator<mpreal> > renormalize(op);
+                vec3<mpreal> y;
+                mat3<mpreal> jac;
+                renormalize(f.parameters, &y, &jac);
+                auto evals = jac.eigenvalues();
+
+                std::cout <<
+                    w0 << '\t' <<
+                    w1 << '\t' <<
+                    f.alpha().toString() << '\t' <<
+                    f.c().toString() << '\t' <<
+                    f.v0().toString() << '\t' <<
+                    f.v1().toString() << '\t' <<
+                    evals[0].real().toString() << '\t' <<
+                    evals[1].real().toString() << '\t' <<
+                    evals[2].real().toString() <<
+                    std::endl;
+
+                w1.pop_back();
+            }
+        }
+
+        w0.push_back('R');
+    }
+}
+
 void usage()
 {
     std::cerr << "usage: lorenz w0 w1 c alpha\n\n";
@@ -437,10 +481,18 @@ void usage()
 
 int main(int argc, char *argv[])
 {
+    mpreal::set_default_prec(precision);
+
+#if 1
+    if (argc != 1) {
+        std::cerr << "usage: lorenz\n\n";
+        exit(EXIT_FAILURE);
+    }
+
+    print_monotone_type_fixed_points();
+#else
     if (argc != 5)
         usage();
-
-    mpreal::set_default_prec(precision);
 
     std::string w0(argv[1]);
     std::string w1(argv[2]);
@@ -499,6 +551,7 @@ int main(int argc, char *argv[])
     std::cerr << "R(f) =\n\t" << y.transpose() << std::endl;
     std::cerr << "spec DR(f) =\n\t" << jac.eigenvalues().transpose() <<
         std::endl;
+#endif
 
     return EXIT_SUCCESS;
 }
