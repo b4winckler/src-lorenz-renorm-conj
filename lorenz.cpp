@@ -357,25 +357,31 @@ void realize_fixed_point(lorenz_map<scalar> &f,
     AutoDiffJacobian< renormalization_operator<scalar> > renormalize(op);
     vec3<scalar> y, h;
     mat3<scalar> jacobian;
-    scalar sqr_err(1), c = c0;
+    scalar sqr_err(1), last_sqr_err(2), c = c0;
     size_t count = 0;
 
-    for (; sqr_err > max_sqr_err && count < 1e6; ++count) {
+    while (count++ < 1e6) {
         // Determine v0 and v1
         realize_renormalizable_map(f, w0, w1, c, false);
 
-        // Take a Newton step
+        // Calculate Newton step
         renormalize(f.parameters, &y, &jacobian);
         auto lu = (jacobian - mat3<scalar>::Identity()).fullPivLu();
         h = lu.solve(y - f.parameters);
         // std::cerr << "x = " << f.parameters.transpose() << "\ny = " <<
         //     y.transpose() << "\nh = " << h.transpose() << std::endl;
+
+        last_sqr_err = sqr_err;
+        sqr_err = h[0] * h[0];
+        if (sqr_err > last_sqr_err && sqr_err < max_sqr_err) {
+            sqr_err = last_sqr_err;
+            break;  // error is small but increasing, so stop
+        }
+
         c -= h[0];
 
         if (c < 0 || c > 1)
             error("newton step moved critical point outside (0,1)");
-
-        sqr_err = h[0] * h[0];
     }
 
     f.parameters[0] = c;
@@ -397,7 +403,7 @@ void realize_fixed_point_newton(lorenz_map<scalar> &f,
     AutoDiffJacobian< renormalization_operator<scalar> > renormalize(op);
     vec3<scalar> y, h;
     mat3<scalar> jacobian;
-    scalar sqr_err(1);
+    scalar sqr_err(1), last_sqr_err(2);
     size_t count = 0;
 
     f = f0;
@@ -406,11 +412,19 @@ void realize_fixed_point_newton(lorenz_map<scalar> &f,
         realize_renormalizable_map(f, w0, w1, f.c(), false);
     }
 
-    for (; sqr_err > max_sqr_err && count < 1e6; ++count) {
-        // Take a Newton step
+    while (count++ < 1e6) {
+        // Calculate Newton step
         renormalize(f.parameters, &y, &jacobian);
         auto lu = (jacobian - mat3<scalar>::Identity()).fullPivLu();
         h = lu.solve(y - f.parameters);
+
+        last_sqr_err = sqr_err;
+        sqr_err = h.squaredNorm();
+        if (sqr_err > last_sqr_err && sqr_err < max_sqr_err) {
+            sqr_err = last_sqr_err;
+            break;  // error is small but increasing, so stop
+        }
+
         f.parameters -= h;
 
         if (f.c() < 0 || f.c() > 1)
@@ -419,8 +433,6 @@ void realize_fixed_point_newton(lorenz_map<scalar> &f,
             error("newton step moved v0 outside (0,1)");
         if (f.v1() < 0 || f.v1() > 1)
             error("newton step moved v1 outside (0,1)");
-
-        sqr_err = h.squaredNorm();
     }
 
     if (verbose) {
