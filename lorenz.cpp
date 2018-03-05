@@ -441,6 +441,44 @@ void realize_fixed_point_newton(lorenz_map<scalar> &f,
     }
 }
 
+void print_fixed_point(
+        const std::string &w0, const std::string &w1, const mpreal &c,
+        const mpreal &alpha)
+{
+    // Realize a (w0,w1)-renormalizable map with critical point c
+    lorenz_map<mpreal> f0(alpha);
+    realize_renormalizable_map(f0, w0, w1, c, true);
+    std::cerr << "f = " << f0.c() << ' ' << f0.v0() << ' ' << f0.v1() <<
+        std::endl;
+    bool b = is_quasi_renormalizable(f0, w0, w1);
+    std::cerr << "quasi-renormalizable: " << b << std::endl;
+
+    vec3<mpreal> y;
+    mat3<mpreal> jac;
+    renormalization_operator<mpreal> op(w0, w1, f0.alpha());
+    AutoDiffJacobian< renormalization_operator<mpreal> > renormalize(op);
+    renormalize(f0.parameters, &y, &jac);
+
+    std::cerr << "R(f) =\n\t" << y.transpose() << std::endl;
+    std::cerr << "spec DR(f) =\n\t" << jac.eigenvalues().transpose() <<
+        std::endl;
+
+    lorenz_map<mpreal> f(alpha);
+    realize_fixed_point(f, w0, w1, c, true);
+    std::cerr << "fixed point f =\n\t" << f.parameters.transpose() << std::endl;
+    renormalize(f.parameters, &y, &jac);
+    std::cerr << "R(f) =\n\t" << y.transpose() << std::endl;
+    std::cerr << "spec DR(f) =\n\t" << jac.eigenvalues().transpose() <<
+        std::endl;
+
+    realize_fixed_point_newton(f, w0, w1, f0, true);
+    std::cerr << "fixed point f =\n\t" << f.parameters.transpose() << std::endl;
+    renormalize(f.parameters, &y, &jac);
+    std::cerr << "R(f) =\n\t" << y.transpose() << std::endl;
+    std::cerr << "spec DR(f) =\n\t" << jac.eigenvalues().transpose() <<
+        std::endl;
+}
+
 void print_monotone_type_fixed_points()
 {
     std::vector<mpreal> alphas = { 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 10, 20 };
@@ -542,17 +580,11 @@ void print_critical_point_movement(
     }
 }
 
-void usage()
-{
-    std::cerr << "usage: lorenz w0 w1 c alpha\n\n";
-    exit(EXIT_FAILURE);
-}
-
 int main(int argc, char *argv[])
 {
     mpreal::set_default_prec(precision);
 
-#if 1
+#if 0
     if (argc != 4) {
         std::cerr << "usage: lorenz w0 w1 alpha\n\n";
         exit(EXIT_FAILURE);
@@ -569,9 +601,11 @@ int main(int argc, char *argv[])
     }
 
     print_monotone_type_fixed_points();
-#elif 0
-    if (argc != 5)
-        usage();
+#elif 1
+    if (argc != 5) {
+        std::cerr << "usage: lorenz w0 w1 c alpha\n\n";
+        exit(EXIT_FAILURE);
+    }
 
     std::string w0(argv[1]);
     std::string w1(argv[2]);
@@ -593,43 +627,7 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-#if 0
-    std::vector<mpreal> x;
-    realize_orbit_with_itinerary(x, w0 + w1, c);
-    debug_vector(x);
-#endif
-
-    // Realize a (w0,w1)-renormalizable map with critical point c
-    lorenz_map<mpreal> f0(alpha);
-    realize_renormalizable_map(f0, w0, w1, c, true);
-    std::cerr << "f = " << f0.c() << ' ' << f0.v0() << ' ' << f0.v1() << std::endl;
-    bool b = is_quasi_renormalizable(f0, w0, w1);
-    std::cerr << "quasi-renormalizable: " << b << std::endl;
-
-    vec3<mpreal> y;
-    mat3<mpreal> jac;
-    renormalization_operator<mpreal> op(w0, w1, f0.alpha());
-    AutoDiffJacobian< renormalization_operator<mpreal> > renormalize(op);
-    renormalize(f0.parameters, &y, &jac);
-
-    std::cerr << "R(f) =\n\t" << y.transpose() << std::endl;
-    std::cerr << "spec DR(f) =\n\t" << jac.eigenvalues().transpose() <<
-        std::endl;
-
-    lorenz_map<mpreal> f(alpha);
-    realize_fixed_point(f, w0, w1, c, true);
-    std::cerr << "fixed point f =\n\t" << f.parameters.transpose() << std::endl;
-    renormalize(f.parameters, &y, &jac);
-    std::cerr << "R(f) =\n\t" << y.transpose() << std::endl;
-    std::cerr << "spec DR(f) =\n\t" << jac.eigenvalues().transpose() <<
-        std::endl;
-
-    realize_fixed_point_newton(f, w0, w1, f0, true);
-    std::cerr << "fixed point f =\n\t" << f.parameters.transpose() << std::endl;
-    renormalize(f.parameters, &y, &jac);
-    std::cerr << "R(f) =\n\t" << y.transpose() << std::endl;
-    std::cerr << "spec DR(f) =\n\t" << jac.eigenvalues().transpose() <<
-        std::endl;
+    print_fixed_point(w0, w1, c, alpha);
 #endif
 
     return EXIT_SUCCESS;
