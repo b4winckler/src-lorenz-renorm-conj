@@ -485,6 +485,63 @@ void print_monotone_type_fixed_points()
     }
 }
 
+// Evaluate (w0,w1)-renormalization on words (rw0, rw1).
+//
+// Use case: if an actual Lorenz map f is twice (w0,w1)-renormalizable then its
+// second (w0,w1)-renormalization equals its first (rw0,rw1)-renormalization,
+// where (rw0,rw1) is the (w0,w1)-renormalization of (w0,w1).
+void renormalize_words(
+        std::string &rw0, std::string &rw1,
+        const std::string &w0, const std::string &w1)
+{
+    std::string rw0_copy(rw0);
+    rw0.clear();
+    for (auto ch : rw0_copy)
+        rw0.append('L' == ch ? w0 : w1);
+
+    std::string rw1_copy(rw1);
+    rw1.clear();
+    for (auto ch : rw1_copy)
+        rw1.append('L' == ch ? w0 : w1);
+}
+
+// For a range of critical points c, find the map which fixes (v0,v1) and print
+// the critical point of its 'nrenorm' first renormalizations.
+// The output is one line of critical points, followed by one line each for the
+// critical points of the n-th renormalization.
+void print_critical_point_movement(
+        const std::string &w0, const std::string &w1, const mpreal &alpha)
+{
+    static int nrenorm = 2;
+    static int ngrid = 100;
+
+    std::string rw0("L"), rw1("R");
+    lorenz_map<mpreal> f(alpha);
+    vec3<mpreal> y;
+    mpreal c;
+    mpreal scale(ngrid + 1);
+    scale = 1 / scale;
+
+    // Print c coordinates
+    for (int j = 0; j < ngrid; ++j) {
+        c = (j + 1) * scale;
+        std::cout << c.toString() << (j == ngrid - 1 ? '\n' : '\t');
+    }
+
+    // Print c(R^{i+1}(f)) coordinates
+    for (int i = 0; i < nrenorm; ++i) {
+        renormalize_words(rw0, rw1, w0, w1);
+
+        for (int j = 0; j < ngrid; ++j) {
+            c = (j + 1) * scale;
+            realize_renormalizable_map(f, rw0, rw1, c, false);
+            renormalization_operator<mpreal> renormalize(rw0, rw1, f.alpha());
+            renormalize(f.parameters, &y);
+            std::cout << y[0].toString() << (j == ngrid - 1 ? '\n' : '\t');
+        }
+    }
+}
+
 void usage()
 {
     std::cerr << "usage: lorenz w0 w1 c alpha\n\n";
@@ -496,13 +553,23 @@ int main(int argc, char *argv[])
     mpreal::set_default_prec(precision);
 
 #if 1
+    if (argc != 4) {
+        std::cerr << "usage: lorenz w0 w1 alpha\n\n";
+        exit(EXIT_FAILURE);
+    }
+
+    std::string w0(argv[1]);
+    std::string w1(argv[2]);
+    mpreal alpha(argv[3]);
+    print_critical_point_movement(w0, w1, alpha);
+#elif 0
     if (argc != 1) {
         std::cerr << "usage: lorenz\n\n";
         exit(EXIT_FAILURE);
     }
 
     print_monotone_type_fixed_points();
-#else
+#elif 0
     if (argc != 5)
         usage();
 
