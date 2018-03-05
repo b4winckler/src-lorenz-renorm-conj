@@ -176,7 +176,7 @@ template <typename scalar>
 void realize_renormalizable_map(
         lorenz_map<scalar> &f,
         const std::string &w0, const std::string &w1, const scalar &c,
-        bool verbose)
+        const mpreal &sqr_eps, bool verbose)
 {
     // Find admissible initial guess to Thurston algorithm
     // TODO: why is it correct to choose pre-orbit of full affine map?
@@ -189,7 +189,7 @@ void realize_renormalizable_map(
     size_t n0 = w0.size(), n1 = w1.size(), n = n0 + n1;
     scalar sqr_err(1), tmp, v0, v1;
     size_t count = 0;
-    for (; sqr_err > max_sqr_err && count < 1e6; ++count) {
+    for (; sqr_err > sqr_eps && count < 1e6; ++count) {
         // This is the Thurston pull back step: pull back each point in such a
         // way that a fixed point of the pull back is an actual orbit of the
         // desired Lorenz family.  The magic of this algorithm is that it does
@@ -362,7 +362,7 @@ void realize_fixed_point(lorenz_map<scalar> &f,
 
     while (count++ < 1e6) {
         // Determine v0 and v1
-        realize_renormalizable_map(f, w0, w1, c, false);
+        realize_renormalizable_map(f, w0, w1, c, max_sqr_err, false);
 
         // Calculate Newton step
         renormalize(f.parameters, &y, &jacobian);
@@ -409,7 +409,7 @@ void realize_fixed_point_newton(lorenz_map<scalar> &f,
     f = f0;
     if (!is_quasi_renormalizable(f, w0, w1)) {
         if (verbose) std::cerr << "starting guess not quasi-renormalizable\n";
-        realize_renormalizable_map(f, w0, w1, f.c(), false);
+        realize_renormalizable_map(f, w0, w1, f.c(), max_sqr_err, false);
     }
 
     while (count++ < 1e6) {
@@ -441,13 +441,63 @@ void realize_fixed_point_newton(lorenz_map<scalar> &f,
     }
 }
 
+template <typename scalar>
+void realize_renormalizable_map_fast(
+        lorenz_map<scalar> &f,
+        const std::string &w0, const std::string &w1, const scalar &c,
+        bool verbose)
+{
+    // Find initial guess using Thurston iteration
+    mpreal sqr_eps("1e-6");
+    realize_renormalizable_map(f, w0, w1, c, sqr_eps, verbose);
+
+    renormalization_operator<scalar> op(w0, w1, f.alpha());
+    AutoDiffJacobian< renormalization_operator<scalar> > renormalize(op);
+    vec3<scalar> y, h;
+    mat3<scalar> jacobian;
+    scalar sqr_err(1), last_sqr_err(2);
+    size_t count = 0;
+
+    while (count++ < 1e6) {
+        // Calculate Newton step in (v0,v1)-direction
+        renormalize(f.parameters, &y, &jacobian);
+        jacobian(0, 0) = 1;
+        jacobian(0, 1) = 0;
+        jacobian(0, 2) = 0;
+        jacobian(1, 0) = 0;
+        jacobian(2, 0) = 0;
+        auto lu = (jacobian - mat3<scalar>::Identity()).fullPivLu();
+        h = lu.solve(y - f.parameters);
+
+        last_sqr_err = sqr_err;
+        sqr_err = h[1] * h[1] + h[2] * h[2];
+        if (sqr_err > last_sqr_err && sqr_err < max_sqr_err) {
+            sqr_err = last_sqr_err;
+            break;  // error is small but increasing, so stop
+        }
+
+        f.parameters[1] -= h[1];
+        f.parameters[2] -= h[2];
+
+        if (f.v0() < 0 || f.v0() > 1)
+            error("newton step moved v0 outside (0,1)");
+        if (f.v1() < 0 || f.v1() > 1)
+            error("newton step moved v1 outside (0,1)");
+    }
+
+    if (verbose) {
+        std::cerr << "thurston->newton: #iterations = " << count << ", error = " <<
+            sqrt(sqr_err) << std::endl;
+    }
+}
+
 void print_fixed_point(
         const std::string &w0, const std::string &w1, const mpreal &c,
         const mpreal &alpha)
 {
     // Realize a (w0,w1)-renormalizable map with critical point c
     lorenz_map<mpreal> f0(alpha);
-    realize_renormalizable_map(f0, w0, w1, c, true);
+    realize_renormalizable_map(f0, w0, w1, c, max_sqr_err, true);
     std::cerr << "f = " << f0.c() << ' ' << f0.v0() << ' ' << f0.v1() <<
         std::endl;
     bool b = is_quasi_renormalizable(f0, w0, w1);
@@ -572,7 +622,7 @@ void print_critical_point_movement(
 
         for (int j = 0; j < ngrid; ++j) {
             c = (j + 1) * scale;
-            realize_renormalizable_map(f, rw0, rw1, c, false);
+            realize_renormalizable_map(f, rw0, rw1, c, max_sqr_err, false);
             renormalization_operator<mpreal> renormalize(rw0, rw1, f.alpha());
             renormalize(f.parameters, &y);
             std::cout << y[0].toString() << (j == ngrid - 1 ? '\n' : '\t');
@@ -601,7 +651,7 @@ int main(int argc, char *argv[])
     }
 
     print_monotone_type_fixed_points();
-#elif 1
+#elif 0
     if (argc != 5) {
         std::cerr << "usage: lorenz w0 w1 c alpha\n\n";
         exit(EXIT_FAILURE);
@@ -628,6 +678,22 @@ int main(int argc, char *argv[])
     }
 
     print_fixed_point(w0, w1, c, alpha);
+#elif 1
+    if (argc != 5) {
+        std::cerr << "usage: lorenz w0 w1 c alpha\n\n";
+        exit(EXIT_FAILURE);
+    }
+
+    std::string w0(argv[1]);
+    std::string w1(argv[2]);
+    mpreal c(argv[3]);
+    mpreal alpha(argv[4]);
+
+    lorenz_map<mpreal> f(alpha);
+    // realize_renormalizable_map(f, w0, w1, c, max_sqr_err, true);
+    realize_renormalizable_map_fast(f, w0, w1, c, true);
+
+    std::cerr << "fixed point f =\n\t" << f.parameters.transpose() << std::endl;
 #endif
 
     return EXIT_SUCCESS;
