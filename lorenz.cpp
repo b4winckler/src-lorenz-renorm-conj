@@ -360,7 +360,7 @@ void realize_fixed_point(lorenz_map<scalar> &f,
     scalar sqr_err(1), last_sqr_err(2), c = c0;
     size_t count = 0;
 
-    while (count++ < 1e6) {
+    while (count++ < 1e3) {
         // Determine v0 and v1
         realize_renormalizable_map(f, w0, w1, c, max_sqr_err, false);
 
@@ -368,12 +368,10 @@ void realize_fixed_point(lorenz_map<scalar> &f,
         renormalize(f.parameters, &y, &jacobian);
         auto lu = (jacobian - mat3<scalar>::Identity()).fullPivLu();
         h = lu.solve(y - f.parameters);
-        // std::cerr << "x = " << f.parameters.transpose() << "\ny = " <<
-        //     y.transpose() << "\nh = " << h.transpose() << std::endl;
 
         last_sqr_err = sqr_err;
         sqr_err = h[0] * h[0];
-        if (sqr_err > last_sqr_err && sqr_err < max_sqr_err) {
+        if (sqr_err >= last_sqr_err && sqr_err < max_sqr_err) {
             sqr_err = last_sqr_err;
             break;  // error is small but increasing, so stop
         }
@@ -383,6 +381,9 @@ void realize_fixed_point(lorenz_map<scalar> &f,
         if (c < 0 || c > 1)
             error("newton step moved critical point outside (0,1)");
     }
+
+    if (count > 100)
+        std::cerr << "newton took unusually long to coverge: " << count << std::endl;
 
     f.parameters[0] = c;
 
@@ -412,7 +413,7 @@ void realize_fixed_point_newton(lorenz_map<scalar> &f,
         realize_renormalizable_map(f, w0, w1, f.c(), max_sqr_err, false);
     }
 
-    while (count++ < 1e6) {
+    while (count++ < 1e3) {
         // Calculate Newton step
         renormalize(f.parameters, &y, &jacobian);
         auto lu = (jacobian - mat3<scalar>::Identity()).fullPivLu();
@@ -420,7 +421,7 @@ void realize_fixed_point_newton(lorenz_map<scalar> &f,
 
         last_sqr_err = sqr_err;
         sqr_err = h.squaredNorm();
-        if (sqr_err > last_sqr_err && sqr_err < max_sqr_err) {
+        if (sqr_err >= last_sqr_err && sqr_err < max_sqr_err) {
             sqr_err = last_sqr_err;
             break;  // error is small but increasing, so stop
         }
@@ -435,6 +436,9 @@ void realize_fixed_point_newton(lorenz_map<scalar> &f,
             error("newton step moved v1 outside (0,1)");
     }
 
+    if (count > 100)
+        std::cerr << "newton took unusually long to coverge: " << count << std::endl;
+
     if (verbose) {
         std::cerr << "newton: #iterations = " << count << ", error = " <<
             sqrt(sqr_err) << std::endl;
@@ -445,11 +449,10 @@ template <typename scalar>
 void realize_renormalizable_map_fast(
         lorenz_map<scalar> &f,
         const std::string &w0, const std::string &w1, const scalar &c,
-        bool verbose)
+        const mpreal &sqr_eps, bool verbose)
 {
     // Find initial guess using Thurston iteration
-    mpreal sqr_eps("1e-6");
-    realize_renormalizable_map(f, w0, w1, c, sqr_eps, verbose);
+    realize_renormalizable_map(f, w0, w1, c, 1e-6, verbose);
 
     renormalization_operator<scalar> op(w0, w1, f.alpha());
     AutoDiffJacobian< renormalization_operator<scalar> > renormalize(op);
@@ -458,7 +461,7 @@ void realize_renormalizable_map_fast(
     scalar sqr_err(1), last_sqr_err(2);
     size_t count = 0;
 
-    while (count++ < 1e6) {
+    while (count++ < 1e3) {
         // Calculate Newton step in (v0,v1)-direction
         renormalize(f.parameters, &y, &jacobian);
         jacobian(0, 0) = 1;
@@ -471,9 +474,9 @@ void realize_renormalizable_map_fast(
 
         last_sqr_err = sqr_err;
         sqr_err = h[1] * h[1] + h[2] * h[2];
-        if (sqr_err > last_sqr_err && sqr_err < max_sqr_err) {
+        if (sqr_err >= last_sqr_err && sqr_err < sqr_eps) {
             sqr_err = last_sqr_err;
-            break;  // error is small but increasing, so stop
+            break;  // error is small and non-decreasing, so stop
         }
 
         f.parameters[1] -= h[1];
@@ -484,6 +487,9 @@ void realize_renormalizable_map_fast(
         if (f.v1() < 0 || f.v1() > 1)
             error("newton step moved v1 outside (0,1)");
     }
+
+    if (count > 100)
+        std::cerr << "newton took unusually long to coverge: " << count << std::endl;
 
     if (verbose) {
         std::cerr << "thurston->newton: #iterations = " << count << ", error = " <<
@@ -691,9 +697,9 @@ int main(int argc, char *argv[])
 
     lorenz_map<mpreal> f(alpha);
     // realize_renormalizable_map(f, w0, w1, c, max_sqr_err, true);
-    realize_renormalizable_map_fast(f, w0, w1, c, true);
+    realize_renormalizable_map_fast(f, w0, w1, c, max_sqr_err, true);
 
-    std::cerr << "fixed point f =\n\t" << f.parameters.transpose() << std::endl;
+    std::cerr << "f =\n\t" << f.parameters.transpose() << std::endl;
 #endif
 
     return EXIT_SUCCESS;
