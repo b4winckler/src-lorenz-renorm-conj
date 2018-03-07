@@ -51,7 +51,7 @@ void error(const char *msg)
 //
 // f is (w0,w1)-renormalizable iff:
 //
-//  *   the first-return map to [l, r] is (affinely conjugate) a Lorenz map,
+//  *   the first-return map to [l, r] is (affinely conjugate to) a Lorenz map,
 //  *   the itinerary of the left/right branch of the first-return map is
 //      w0/w1,
 //  *   l = f^{n1 - 1}(0) and r = f^{n0 - 1}(1), where n0/n1 is the length of the
