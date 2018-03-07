@@ -37,11 +37,11 @@ static mpreal max_sqr_err("1e-200");
 // LRRRRRRRLLRLLRLLRLLRLLRLL RLLLRRRRRRLRRRRRR
 
 
-void error(const char *msg)
-{
-    std::cerr << __FILE__ << ':' << __LINE__ << ": " << msg << std::endl;
-    exit(EXIT_FAILURE);
-}
+#define error(msg) \
+{ \
+    std::cerr << __FILE__ << ':' << __LINE__ << ": " << msg << std::endl; \
+    exit(EXIT_FAILURE); \
+} \
 
 // A Lorenz map f is defined on the unit interval, minus the critical point c.
 // It is normalized so that the critical values are 0 and 1; i.e. f(c-) = 1 and
