@@ -39,7 +39,7 @@ static mpreal max_sqr_err("1e-200");
 
 #define error(msg) \
 { \
-    std::cerr << __FILE__ << ':' << __LINE__ << ": " << msg << std::endl; \
+    std::cerr << __FILE__ << ':' << __LINE__ << ": " << (msg) << std::endl; \
     exit(EXIT_FAILURE); \
 } \
 
