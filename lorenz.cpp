@@ -447,13 +447,10 @@ void realize_fixed_point_newton(lorenz_map<scalar> &f,
 
 template <typename scalar>
 void realize_renormalizable_map_fast(
-        lorenz_map<scalar> &f,
-        const std::string &w0, const std::string &w1, const scalar &c,
+        lorenz_map<scalar> &f,  // initial guess and output
+        const std::string &w0, const std::string &w1,
         const mpreal &sqr_eps, bool verbose)
 {
-    // Find initial guess using Thurston iteration
-    realize_renormalizable_map(f, w0, w1, c, 1e-6, verbose);
-
     renormalization_operator<scalar> op(w0, w1, f.alpha());
     AutoDiffJacobian< renormalization_operator<scalar> > renormalize(op);
     vec3<scalar> y, h;
@@ -492,7 +489,7 @@ void realize_renormalizable_map_fast(
         std::cerr << "newton took unusually long to coverge: " << count << std::endl;
 
     if (verbose) {
-        std::cerr << "thurston->newton: #iterations = " << count << ", error = " <<
+        std::cerr << "newton(v0,v1): #iterations = " << count << ", error = " <<
             sqrt(sqr_err) << std::endl;
     }
 }
