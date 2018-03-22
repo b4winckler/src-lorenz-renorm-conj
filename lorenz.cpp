@@ -13,11 +13,15 @@ using namespace mpfr;
 using namespace Eigen;
 
 template <typename t>
+using vec2 = Matrix<t, 2, 1>;
+template <typename t>
 using vec3 = Matrix<t, 3, 1>;
 
 template <typename t>
 using vecN = Matrix<t, Dynamic, 1>;
 
+template <typename t>
+using mat2 = Matrix<t, 2, 2>;
 template <typename t>
 using mat3 = Matrix<t, 3, 3>;
 
@@ -497,6 +501,91 @@ void realize_renormalizable_map_fast(
     }
 }
 
+template <typename scalar>
+struct boundary_op {
+    typedef vec2<scalar> InputType;
+    typedef vec2<scalar> ValueType;
+
+    size_t n0, n1;
+    mpreal c, alpha;
+
+    boundary_op(size_t n0_, size_t n1_, const mpreal &c_,
+            const mpreal &alpha_)
+        : n0(n0_), n1(n1_), c(c_), alpha(alpha_) { }
+
+    template <typename t>
+    void operator() (const vec2<t> &x, vec2<t> *py) const
+    {
+        lorenz_map<t> f(alpha);
+        f.set_parameters(c, x[0], x[1]);
+
+        // l = f^{n1 - 1)(0), vl = f^{n0}(l)
+        t l(0), vl;
+        f.iterate(l, l, n1 - 1);
+        f.iterate(vl, l, n0);
+
+        // r = f^{n0 - 1)(1), vr = f^{n1}(r)
+        t r(1), vr;
+        f.iterate(r, r, n0 - 1);
+        f.iterate(vr, r, n1);
+
+        // The return interval is [l, r] and the image of the first-return map
+        // of f on this interval is [vl, vr]
+        *py <<
+            vl - l - x[0] * (r - l),
+            vr - l - x[1] * (r - l);
+    }
+};
+
+template <typename scalar>
+void realize_renormalizable_map_boundary_op(
+        lorenz_map<scalar> &f,
+        const std::string &w0, const std::string &w1, const scalar &c,
+        const mpreal &sqr_eps, bool verbose)
+{
+    // Find initial guess using Thurston iteration
+    realize_renormalizable_map(f, w0, w1, c, mpreal(1e-6), verbose);
+
+    boundary_op<scalar> op(w0.size(), w1.size(), c, f.alpha());
+    AutoDiffJacobian< boundary_op<scalar> > dop(op);
+    vec2<scalar> x, y, h;
+    mat2<scalar> jacobian;
+    scalar sqr_err(1), last_sqr_err(2);
+    size_t count = 0;
+
+    x[0] = f.parameters[1];
+    x[1] = f.parameters[2];
+
+    while (count++ < 1e3) {
+        // Calculate Newton step in (v0,v1)-direction
+        dop(x, &y, &jacobian);
+        h = jacobian.fullPivLu().solve(y);
+
+        last_sqr_err = sqr_err;
+        sqr_err = h.squaredNorm();
+        if (sqr_err >= last_sqr_err && sqr_err < sqr_eps) {
+            sqr_err = last_sqr_err;
+            break;  // error is small and non-decreasing, so stop
+        }
+
+        x -= h;
+
+        if (x[0] < 0 || x[0] > 1)
+            error("newton step moved v0 outside (0,1)");
+        if (x[1] < 0 || x[1] > 1)
+            error("newton step moved v1 outside (0,1)");
+    }
+
+    if (count > 100)
+        std::cerr << "newton took unusually long to coverge: " << count <<
+            std::endl;
+
+    if (verbose) {
+        std::cerr << "boundary_op: #iterations = " << count << ", error = " <<
+            sqrt(sqr_err) << std::endl;
+    }
+}
+
 void print_fixed_point(
         const std::string &w0, const std::string &w1, const mpreal &c,
         const mpreal &alpha)
@@ -697,7 +786,8 @@ int main(int argc, char *argv[])
 
     lorenz_map<mpreal> f(alpha);
     // realize_renormalizable_map(f, w0, w1, c, max_sqr_err, true);
-    realize_renormalizable_map_fast(f, w0, w1, c, max_sqr_err, true);
+    // realize_renormalizable_map_fast(f, w0, w1, c, max_sqr_err, true);
+    realize_renormalizable_map_boundary_op(f, w0, w1, c, max_sqr_err, true);
 
     std::cerr << "f =\n\t" << f.parameters.transpose() << std::endl;
 #endif
