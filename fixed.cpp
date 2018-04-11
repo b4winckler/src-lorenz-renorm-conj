@@ -444,8 +444,8 @@ void newton_thurston(lorenz_map<scalar> &f,
         }
 
         if (verbose)
-            std::cerr << "newton+thurston: step = " << h.transpose() <<
-                std::endl;
+            std::cerr << "newton+thurston: f = " << f.parameters.transpose() <<
+                ",\tdf = " << (-h).transpose() << std::endl;
 
         if (0 == stage)
             f.parameters[0] -= h[0];
