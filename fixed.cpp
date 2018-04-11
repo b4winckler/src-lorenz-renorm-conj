@@ -421,7 +421,7 @@ void newton_thurston(lorenz_map<scalar> &f,
     int stage = 0;
     while (count++ < 1e3) {
         if (0 == stage)
-            thurston(f, w0, w1, f.c(), max_sqr_err, false);
+            thurston(f, w0, w1, f.c(), mpreal("1e-50"), verbose);
 
         dop(f.parameters, &y, &jac);
         h = jac.fullPivLu().solve(y);
@@ -432,9 +432,9 @@ void newton_thurston(lorenz_map<scalar> &f,
             sqr_err = last_sqr_err;
             if (0 == stage) {
                 if (verbose)
-                    std::cerr <<
-                        "newton+thurston: entering second stage #iterations = "
-                        << count << std::endl;
+                    std::cerr << "newton+thurston: "
+                        "entering second stage #iterations = " << count
+                        << std::endl;
                 stage = 1;
                 continue;
             } else {
@@ -442,8 +442,9 @@ void newton_thurston(lorenz_map<scalar> &f,
             }
         }
 
-        std::cerr << f.parameters.transpose() << '\t' << h.transpose() <<
-            '\t' << jac.eigenvalues().transpose() << std::endl;
+        if (verbose)
+            std::cerr << "newton+thurston: step = " << h.transpose() <<
+                std::endl;
 
         if (0 == stage)
             f.parameters[0] -= h[0];
@@ -459,8 +460,8 @@ void newton_thurston(lorenz_map<scalar> &f,
     }
 
     if (count > 100)
-        std::cerr << "newton took unusually long to coverge: " << count <<
-            std::endl;
+        std::cerr << "newton+thurston: took unusually long to coverge: " <<
+            count << std::endl;
 
     if (verbose) {
         std::cerr << "newton+thurston: #iterations = " << count <<
@@ -494,8 +495,16 @@ int main(int argc, char *argv[])
     // newton(f, w0, w1, f0, true);
 
     newton_thurston(f, w0, w1, f0, true);
-    std::cerr << "f = " << f.c() << ' ' << f.v0() << ' ' << f.v1() <<
+    std::cerr << "R fixed point =\n" << f.c().toString() << '\n' <<
+        f.v0().toString() << '\n' << f.v1().toString() <<
         std::endl;
+
+    renormalization_operator<mpreal> op(w0, w1, f0.alpha());
+    AutoDiffJacobian< renormalization_operator<mpreal> > renorm(op);
+    vec3<mpreal> y;
+    mat3<mpreal> jac;
+    renorm(f.parameters, &y, &jac);
+    std::cout << "DR eigenvalues =\n" << jac.eigenvalues();
 
     return EXIT_SUCCESS;
 }
