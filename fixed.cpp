@@ -27,6 +27,7 @@ using mat3 = Matrix<t, 3, 3>;
 
 static mp_prec_t precision = 512;
 static mpreal max_sqr_err("1e-200");
+static mpreal approx_sqr_err("1e-50");
 
 // Examples of combinatorics:
 //
@@ -421,7 +422,7 @@ void newton_thurston(lorenz_map<scalar> &f,
     int stage = 0;
     while (count++ < 1e3) {
         if (0 == stage)
-            thurston(f, w0, w1, f.c(), mpreal("1e-50"), verbose);
+            thurston(f, w0, w1, f.c(), mpreal(approx_sqr_err), verbose);
 
         dop(f.parameters, &y, &jac);
         h = jac.fullPivLu().solve(y);
@@ -485,17 +486,12 @@ int main(int argc, char *argv[])
     mpreal c(argv[3]);
     mpreal alpha(argv[4]);
 
-    // Realize a (w0,w1)-renormalizable map with critical point c
     lorenz_map<mpreal> f0(alpha);
     f0.parameters[0] = c;
-    // thurston(f0, w0, w1, c, max_sqr_err, true);
-    // std::cerr << "f0 = " << f0.c() << ' ' << f0.v0() << ' ' << f0.v1() <<
-    //     std::endl;
     lorenz_map<mpreal> f = f0;
-    // newton(f, w0, w1, f0, true);
 
     newton_thurston(f, w0, w1, f0, true);
-    std::cerr << "R fixed point =\n" << f.c().toString() << '\n' <<
+    std::cout << "R fixed point =\n" << f.c().toString() << '\n' <<
         f.v0().toString() << '\n' << f.v1().toString() <<
         std::endl;
 
@@ -504,7 +500,10 @@ int main(int argc, char *argv[])
     vec3<mpreal> y;
     mat3<mpreal> jac;
     renorm(f.parameters, &y, &jac);
-    std::cout << "DR eigenvalues =\n" << jac.eigenvalues();
+    std::cout << "DR eigenvalues =\n" << jac.eigenvalues() << std::endl;
+
+    std::cerr << "R(f) - f = " << (y - f.parameters).transpose() <<
+        std::endl;
 
     return EXIT_SUCCESS;
 }
