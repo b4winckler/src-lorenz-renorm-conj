@@ -29,8 +29,7 @@ template <typename t> using vec = Matrix<t, Dynamic, 1>;
 template <typename t> using mat = Matrix<t, Dynamic, Dynamic>;
 
 
-const size_t diffeo_size = 10;
-const size_t lorenz_size = 3 + 2 * diffeo_size;
+const size_t diffeo_size = 5;
 
 struct context {
     real alpha;
@@ -47,13 +46,16 @@ void pure(scalar &y, const scalar &x, const scalar &s)
 }
 
 template <typename scalar>
-void clear_lorenz(vec<scalar> &lorenz, scalar c = 0.5, scalar v0 = 0, scalar v1 = 1)
+void init_lorenz(vec<scalar> &lorenz, const context &ctx, scalar c = 0.5,
+        scalar v0 = 0, scalar v1 = 1)
 {
-    lorenz.resize(lorenz_size);
-    lorenz.setZero(lorenz_size);
+    size_t n = 3 + ctx.grid0.size() + ctx.grid1.size();
+    lorenz.resize(n);
     lorenz[0] = c;
     lorenz[1] = v0;
     lorenz[2] = v1;
+    lorenz.segment(3, ctx.grid0.size()) = ctx.grid0;
+    lorenz.tail(ctx.grid1.size()) = ctx.grid1;
 }
 
 template <typename scalar>
@@ -85,6 +87,8 @@ void apply(scalar &y, const scalar &x, const vec<scalar> &lorenz,
     if (y > 0 && y < 1) {
         const vec<real> &grid = left ? ctx.grid0 : ctx.grid1;
         size_t k;
+        // With autodiff library it is not possible (?) to take the floor of y
+        // so we need to search to find the interval on which to interpolate.
         while (k1 > k0 + 1) {
             k = (k0 + k1) / 2;
             if (y < grid[k - i0]) {
@@ -170,6 +174,24 @@ struct renorm_op {
         y[0] = (crit(x) - l) / (r - l);
         y[1] = (vl - l) / (r - l);
         y[2] = (vr - l) / (r - l);
+
+        // Endpoints of diffeos
+        y[3] = 0;
+        y[3 + ctx.grid0.size()] = 0;
+        y[3 + ctx.grid0.size() - 1] = 1;
+        y[3 + ctx.grid0.size() + ctx.grid1.size() - 1] = 1;
+
+        for (size_t k = 1; k < ctx.grid0.size() - 1; ++k) {
+            t p(l + ctx.grid0[k] * (crit(x) - l));
+            iterate(p, p, n0, x, ctx);
+            y[3 + k] = (p - vl) / (r - vl);
+        }
+
+        for (size_t k = 1; k < ctx.grid1.size() - 1; ++k) {
+            t p(crit(x) + ctx.grid0[k] * (r - crit(x)));
+            iterate(p, p, n1, x, ctx);
+            y[3 + ctx.grid0.size() + k] = (p - l) / (vr - l);
+        }
     }
 };
 
@@ -190,22 +212,24 @@ int main(int argc, char *argv[])
     real alpha = atof(argv[4]);
 #endif
 
-    vec<real> f0, f1;
     context ctx;
-    renorm_op<real> renorm(ctx, w0, w1);
-    AutoDiffJacobian< renorm_op<real> > drenorm(renorm);
-    mat<real> jac(lorenz_size, lorenz_size);
-
     ctx.alpha = alpha;
     ctx.grid0.setLinSpaced(diffeo_size, 0, 1);
     ctx.grid1.setLinSpaced(diffeo_size, 0, 1);
-    clear_lorenz(f0, c);
-    clear_lorenz(f1);
+
+    vec<real> f0, f1;
+    init_lorenz(f0, ctx, c, 0.1, 0.9);
+    init_lorenz(f1, ctx);
+
+    renorm_op<real> renorm(ctx, w0, w1);
+    AutoDiffJacobian< renorm_op<real> > drenorm(renorm);
+    mat<real> jac(f0.size(), f0.size());
     drenorm(f0, &f1, &jac);
 
     std::cerr << f0 << std::endl;
     std::cerr << f1 << std::endl;
     std::cerr << jac << std::endl;
+    std::cerr << jac.eigenvalues() << std::endl;
 
     return EXIT_SUCCESS;
 }
