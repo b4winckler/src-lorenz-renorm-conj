@@ -225,12 +225,15 @@ int main(int argc, char *argv[])
     renorm_op<real> renorm(ctx, w0, w1);
     AutoDiffJacobian< renorm_op<real> > drenorm(renorm);
     mat<real> jac(f0.size(), f0.size());
-    drenorm(f0, &f1, &jac);
 
-    std::cerr << f0 << std::endl;
-    std::cerr << f1 << std::endl;
-    std::cerr << jac << std::endl;
-    std::cerr << jac.eigenvalues() << std::endl;
+    std::cerr << "f = " << f0.transpose() << std::endl;
+    for (int i = 1; i <= 3; ++i) {
+        drenorm(f0, &f1, &jac);
+        std::cerr << "R^" << i << "(f) = " << f1.transpose() << std::endl;
+        // std::cerr << jac << std::endl;
+        std::cerr << "eigvals = " << jac.eigenvalues().transpose() << std::endl;
+        f0 = f1;
+    }
 
     return EXIT_SUCCESS;
 }
