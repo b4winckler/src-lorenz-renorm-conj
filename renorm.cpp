@@ -182,13 +182,13 @@ struct renorm_op {
         y[3 + ctx.grid0.size() + ctx.grid1.size() - 1] = 1;
 
         for (size_t k = 1; k < ctx.grid0.size() - 1; ++k) {
-            t p(l + ctx.grid0[k] * (crit(x) - l));
+            t p(l + (1 - pow(1 - ctx.grid0[k], 1 / ctx.alpha)) * (crit(x) - l));
             iterate(p, p, n0, x, ctx);
             y[3 + k] = (p - vl) / (r - vl);
         }
 
         for (size_t k = 1; k < ctx.grid1.size() - 1; ++k) {
-            t p(crit(x) + ctx.grid0[k] * (r - crit(x)));
+            t p(crit(x) + pow(ctx.grid0[k], 1 / ctx.alpha) * (r - crit(x)));
             iterate(p, p, n1, x, ctx);
             y[3 + ctx.grid0.size() + k] = (p - l) / (vr - l);
         }
