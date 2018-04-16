@@ -32,6 +32,12 @@ template <typename t> using mat = Matrix<t, Dynamic, Dynamic>;
 const size_t diffeo_size = 10;
 const size_t lorenz_size = 3 + 2 * diffeo_size;
 
+struct context {
+    real alpha;
+    vec<real> grid0;
+    vec<real> grid1;
+};
+
 
 template <typename scalar>
 void pure(scalar &y, const scalar &x, const scalar &s)
@@ -57,37 +63,53 @@ const scalar &crit(const vec<scalar> &lorenz)
 }
 
 template <typename scalar>
-void apply(scalar &y, const scalar &x, const vec<scalar> &lorenz, const real &alpha)
+void apply(scalar &y, const scalar &x, const vec<scalar> &lorenz,
+        const context &ctx)
 {
-    if (x < lorenz[0]) {
-        // Left branch
+    // Adjust for critical point, then fold
+    size_t i0, k0, k1;
+    bool left = x < lorenz[0];
+    if (left) {
         y = x / lorenz[0];
-        y = 1 - pow(1 - y, alpha);
-
-        for (size_t k = 0; k < diffeo_size; ++k)
-            pure(y, y, lorenz[3 + k]);
-
-        y = lorenz[1] + y * (1 - lorenz[1]);
+        y = 1 - pow(1 - y, ctx.alpha);
+        i0 = k0 = 3;
+        k1 = k0 + ctx.grid0.size() - 1;
     } else if (x > lorenz[0]) {
-        // Right branch
         y = (x - lorenz[0]) / (1 - lorenz[0]);
-        y = pow(y, alpha);
-
-        for (size_t k = 0; k < diffeo_size; ++k)
-            pure(y, y, lorenz[3 + diffeo_size + k]);
-
-        y = y * lorenz[2];
-    } else {
-        error("cannot apply lorenz map");
+        y = pow(y, ctx.alpha);
+        i0 = k0 = 3 + ctx.grid0.size();
+        k1 = k0 + ctx.grid1.size() - 1;
     }
+
+    // Interpolate diffeomorphism
+    if (y > 0 && y < 1) {
+        const vec<real> &grid = left ? ctx.grid0 : ctx.grid1;
+        size_t k;
+        while (k1 > k0 + 1) {
+            k = (k0 + k1) / 2;
+            if (y < grid[k - i0]) {
+                k1 = k;
+            } else if (y > grid[k - i0]) {
+                k0 = k;
+            } else {
+                k0 = k;
+                k1 = k0 + 1;
+            }
+        }
+        y = (grid[k1 - i0] - y) * lorenz[k0] + (y - grid[k0 - i0]) * lorenz[k1];
+        y /= (grid[k1 - i0] - grid[k0 - i0]);
+    }
+
+    // Adjust for boundary value
+    y = left ? lorenz[1] + y * (1 - lorenz[1]) : y = y * lorenz[2];
 }
 
 template <typename scalar>
-void iterate(scalar &y, const scalar &x, size_t n, const vec<scalar> &lorenz, const real &alpha)
+void iterate(scalar &y, const scalar &x, size_t n, const vec<scalar> &lorenz, const context &ctx)
 {
     y = x;
     for (size_t i = 0; i < n; ++i)
-        apply(y, y, lorenz, alpha);
+        apply(y, y, lorenz, ctx);
 }
 
 template <typename scalar>
@@ -96,13 +118,13 @@ struct thurston_op {
     typedef vec<scalar> ValueType;
 
     vec<real> &family2d;
-    const real &alpha;
+    const context &ctx;
     const std::string &w0;
     const std::string &w1;
 
-    thurston_op(vec<scalar> &family2d_, const real &alpha_,
+    thurston_op(vec<scalar> &family2d_, const context &ctx_,
             const std::string &w0_, const std::string &w1_)
-        : family2d(family2d_), alpha(alpha_), w0(w0_), w1(w1_) { }
+        : family2d(family2d_), ctx(ctx_), w0(w0_), w1(w1_) { }
 
     void guess(vec<scalar> &x)
     {
@@ -119,13 +141,13 @@ struct renorm_op {
     typedef vec<scalar> InputType;
     typedef vec<scalar> ValueType;
 
-    const real &alpha;
+    const context &ctx;
     const std::string &w0;
     const std::string &w1;
 
-    renorm_op(const real &alpha_, const std::string &w0_,
+    renorm_op(const context &ctx_, const std::string &w0_,
             const std::string &w1_)
-        : alpha(alpha_), w0(w0_), w1(w1_) { }
+        : ctx(ctx_), w0(w0_), w1(w1_) { }
 
     template <typename t>
     void operator() (const vec<t> &x, vec<t> *py) const
@@ -134,13 +156,13 @@ struct renorm_op {
 
         // l = f^{n1 - 1)(0), vl = f^{n0}(l)
         t l(0), vl;
-        iterate(l, l, n1 - 1, x, alpha);
-        iterate(vl, l, n0, x, alpha);
+        iterate(l, l, n1 - 1, x, ctx);
+        iterate(vl, l, n0, x, ctx);
 
         // r = f^{n0 - 1)(1), vr = f^{n1}(r)
         t r(1), vr;
-        iterate(r, r, n0 - 1, x, alpha);
-        iterate(vr, r, n1, x, alpha);
+        iterate(r, r, n0 - 1, x, ctx);
+        iterate(vr, r, n1, x, ctx);
 
         // The return interval is [l, r] and the image of the first-return map
         // of f on this interval is [vl, vr]
@@ -169,10 +191,14 @@ int main(int argc, char *argv[])
 #endif
 
     vec<real> f0, f1;
-    renorm_op<real> renorm(alpha, w0, w1);
+    context ctx;
+    renorm_op<real> renorm(ctx, w0, w1);
     AutoDiffJacobian< renorm_op<real> > drenorm(renorm);
     mat<real> jac(lorenz_size, lorenz_size);
 
+    ctx.alpha = alpha;
+    ctx.grid0.setLinSpaced(diffeo_size, 0, 1);
+    ctx.grid1.setLinSpaced(diffeo_size, 0, 1);
     clear_lorenz(f0, c);
     clear_lorenz(f1);
     drenorm(f0, &f1, &jac);
