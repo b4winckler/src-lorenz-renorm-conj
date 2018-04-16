@@ -29,8 +29,6 @@ template <typename t> using vec = Matrix<t, Dynamic, 1>;
 template <typename t> using mat = Matrix<t, Dynamic, Dynamic>;
 
 
-const size_t diffeo_size = 5;
-
 struct context {
     real alpha;
     vec<real> grid0;
@@ -197,20 +195,21 @@ struct renorm_op {
 
 int main(int argc, char *argv[])
 {
-    if (argc != 5) {
-        std::cerr << "usage: renorm w0 w1 c alpha\n\n";
+    if (argc != 6) {
+        std::cerr << "usage: renorm w0 w1 c alpha n\n\n";
         exit(EXIT_FAILURE);
     }
 
     std::string w0(argv[1]);
     std::string w1(argv[2]);
 #if USE_MPFR
-    real c(argv[3]);
+    // real c(argv[3]);
     real alpha(argv[4]);
 #else
-    real c = atof(argv[3]);
+    // real c = atof(argv[3]);
     real alpha = atof(argv[4]);
 #endif
+    size_t diffeo_size = atoi(argv[5]);
 
     context ctx;
     ctx.alpha = alpha;
@@ -218,7 +217,9 @@ int main(int argc, char *argv[])
     ctx.grid1.setLinSpaced(diffeo_size, 0, 1);
 
     vec<real> f0, f1;
-    init_lorenz(f0, ctx, c, 0.1, 0.9);
+    // init with (LRR, RL) fixed point of 3d operator
+    init_lorenz(f0, ctx, 0.3306333708, 0.2518865473, 0.8414570392);
+    // init_lorenz(f0, ctx, c, 0.1, 0.9);
     init_lorenz(f1, ctx);
 
     renorm_op<real> renorm(ctx, w0, w1);
