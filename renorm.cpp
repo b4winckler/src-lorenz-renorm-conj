@@ -1,11 +1,13 @@
-#include <unsupported/Eigen/MPRealSupport>
-#include <unsupported/Eigen/AutoDiff>
+#define USE_MPFR 0
+
+#include <iostream>
+
 #include <Eigen/Eigenvalues>
 #include <Eigen/LU>
-
-#define USE_MPFR 1
+#include <unsupported/Eigen/AutoDiff>
 
 #if USE_MPFR
+#include <unsupported/Eigen/MPRealSupport>
 #define real mpreal
 using namespace mpfr;
 #else
@@ -39,12 +41,13 @@ void pure(scalar &y, const scalar &x, const scalar &s)
 }
 
 template <typename scalar>
-void clear_lorenz(vec<scalar> &lorenz)
+void clear_lorenz(vec<scalar> &lorenz, scalar c = 0.5, scalar v0 = 0, scalar v1 = 1)
 {
     lorenz.resize(lorenz_size);
     lorenz.setZero(lorenz_size);
-    lorenz[0] = 0.5;
-    lorenz[2] = 1;
+    lorenz[0] = c;
+    lorenz[1] = v0;
+    lorenz[2] = v1;
 }
 
 template <typename scalar>
@@ -170,7 +173,7 @@ int main(int argc, char *argv[])
     AutoDiffJacobian< renorm_op<real> > drenorm(renorm);
     mat<real> jac(lorenz_size, lorenz_size);
 
-    clear_lorenz(f0);
+    clear_lorenz(f0, c);
     clear_lorenz(f1);
     drenorm(f0, &f1, &jac);
 
