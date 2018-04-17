@@ -1,4 +1,4 @@
-#define USE_MPFR 1
+#define USE_MPFR 0
 
 #include <iostream>
 
@@ -256,6 +256,9 @@ struct renorm_op {
         y[0] = (crit(x) - l) / (r - l);
         y[1] = (vl - l) / (r - l);
         y[2] = (vr - l) / (r - l);
+        // y[0] = crit(x) * (r - l - 1) + l;
+        // y[1] = x[1] * (r - l) - vl + l,
+        // y[2] = x[2] * (r - l) - vr + l;
 
         // Endpoints of diffeos
         y[3] = 0;
@@ -318,19 +321,29 @@ int main(int argc, char *argv[])
             thurston(pb0, &pb1);
         renorm(f0, &f1);
     }
+    std::cerr << f0.transpose().head(10) << std::endl;
+
+    for (size_t i = 0; i < 10; ++i) {
+        // for (size_t i = 0; i < 100; ++i, pb0 = pb1)
+        //     thurston(pb0, &pb1);
+        drenorm(f0, &f1, &jac);
+        vec<real> h = (jac - mat<real>::Identity(f0.size(), f0.size())).fullPivLu().solve(f1 - f0);
+        f0 -= h;
+    }
+    std::cerr << f0.transpose().head(10) << std::endl;
 
     drenorm(f0, &f1, &jac);
     std::cerr << "R^0(f) = " << f0.transpose().head(10) << std::endl;
-    for (int i = 1; i <= 40; ++i, f0 = f1) {
+    for (int i = 1; i <= 1; ++i, f0 = f1) {
         renorm(f0, &f1);
         std::cerr << "R^" << i << "(f) = " << f1.transpose().head(10) <<
             std::endl;
     }
 
-    // vec<real> evals = jac.eigenvalues().array().abs();
-    // std::sort(evals.data(), evals.data() + evals.size());
-    // evals.reverseInPlace();
-    // std::cerr << "|eigvals| = " << evals.transpose().head(5) << std::endl;
+    vec<real> evals = jac.eigenvalues().array().abs();
+    std::sort(evals.data(), evals.data() + evals.size());
+    evals.reverseInPlace();
+    std::cerr << "|eigvals| = " << evals.transpose().head(5) << std::endl;
 
     return EXIT_SUCCESS;
 }
