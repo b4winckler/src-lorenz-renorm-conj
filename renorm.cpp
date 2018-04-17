@@ -81,7 +81,6 @@ void apply(scalar &y, const scalar &x, const vec<scalar> &lorenz,
         k1 = k0 + ctx.grid1.size() - 1;
     }
 
-#if 0
     // Interpolate diffeomorphism
     if (y > 0 && y < 1) {
         const vec<real> &grid = left_branch ? ctx.grid0 : ctx.grid1;
@@ -102,7 +101,6 @@ void apply(scalar &y, const scalar &x, const vec<scalar> &lorenz,
         y = (grid[k1 - i0] - y) * lorenz[k0] + (y - grid[k0 - i0]) * lorenz[k1];
         y /= (grid[k1 - i0] - grid[k0 - i0]);
     }
-#endif
 
     // Adjust for boundary value
     y = left_branch ? lorenz[1] + y * (1 - lorenz[1]) : y = y * lorenz[2];
@@ -124,7 +122,6 @@ void pull_back(scalar &y, const scalar &x, bool left_branch,
         k1 = k0 + ctx.grid1.size() - 1;
     }
 
-#if 0
     // Interpolate diffeomorphism
     if (y > 0 && y < 1) {
         const vec<real> &grid = left_branch ? ctx.grid0 : ctx.grid1;
@@ -141,10 +138,9 @@ void pull_back(scalar &y, const scalar &x, bool left_branch,
                 k1 = k0 + 1;
             }
         }
-        y = (lorenz[k1] - y) * grid[k0 - l] + (y - lorenz[k0]) * lorenz[k1 - l];
+        y = (lorenz[k1] - y) * grid[k0 - l] + (y - lorenz[k0]) * grid[k1 - l];
         y /= (lorenz[k1] - lorenz[k0]);
     }
-#endif
 
     // Fold, then adjust for critical point
     if (left_branch) {
