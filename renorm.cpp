@@ -37,13 +37,6 @@ struct context {
 
 
 template <typename scalar>
-void pure(scalar &y, const scalar &x, const scalar &s)
-{
-    scalar r = exp(s);
-    y = x * (2 + (r - 1) * x) / (r + 1);
-}
-
-template <typename scalar>
 void init_lorenz(vec<scalar> &lorenz, const context &ctx, scalar c = 0.5,
         scalar v0 = 0, scalar v1 = 1)
 {
@@ -63,13 +56,20 @@ const scalar &crit(const vec<scalar> &lorenz)
 }
 
 template <typename scalar>
+void set_v(vec<scalar> &lorenz, const scalar &v0, const scalar &v1)
+{
+    lorenz[1] = v0;
+    lorenz[2] = v1;
+}
+
+template <typename scalar>
 void apply(scalar &y, const scalar &x, const vec<scalar> &lorenz,
         const context &ctx)
 {
     // Adjust for critical point, then fold
     size_t i0, k0, k1;
-    bool left = x < lorenz[0];
-    if (left) {
+    bool left_branch = x < lorenz[0];
+    if (left_branch) {
         y = x / lorenz[0];
         y = 1 - pow(1 - y, ctx.alpha);
         i0 = k0 = 3;
@@ -81,9 +81,10 @@ void apply(scalar &y, const scalar &x, const vec<scalar> &lorenz,
         k1 = k0 + ctx.grid1.size() - 1;
     }
 
+#if 0
     // Interpolate diffeomorphism
     if (y > 0 && y < 1) {
-        const vec<real> &grid = left ? ctx.grid0 : ctx.grid1;
+        const vec<real> &grid = left_branch ? ctx.grid0 : ctx.grid1;
         size_t k;
         // With autodiff library it is not possible (?) to take the floor of y
         // so we need to search to find the interval on which to interpolate.
@@ -101,9 +102,58 @@ void apply(scalar &y, const scalar &x, const vec<scalar> &lorenz,
         y = (grid[k1 - i0] - y) * lorenz[k0] + (y - grid[k0 - i0]) * lorenz[k1];
         y /= (grid[k1 - i0] - grid[k0 - i0]);
     }
+#endif
 
     // Adjust for boundary value
-    y = left ? lorenz[1] + y * (1 - lorenz[1]) : y = y * lorenz[2];
+    y = left_branch ? lorenz[1] + y * (1 - lorenz[1]) : y = y * lorenz[2];
+}
+
+template <typename scalar>
+void pull_back(scalar &y, const scalar &x, bool left_branch,
+        const vec<scalar> &lorenz, const context &ctx)
+{
+    // Adjust for boundary values
+    size_t l, k0, k1;
+    if (left_branch) {
+        y = (x - lorenz[1]) / (1 - lorenz[1]);
+        l = k0 = 3;
+        k1 = k0 + ctx.grid0.size() - 1;
+    } else {
+        y = x / lorenz[2];
+        l = k0 = 3 + ctx.grid0.size();
+        k1 = k0 + ctx.grid1.size() - 1;
+    }
+
+#if 0
+    // Interpolate diffeomorphism
+    if (y > 0 && y < 1) {
+        const vec<real> &grid = left_branch ? ctx.grid0 : ctx.grid1;
+        size_t k;
+        // Search to find the interval on which to interpolate.
+        while (k1 > k0 + 1) {
+            k = (k0 + k1) / 2;
+            if (y < lorenz[k]) {
+                k1 = k;
+            } else if (y > lorenz[k]) {
+                k0 = k;
+            } else {
+                k0 = k;
+                k1 = k0 + 1;
+            }
+        }
+        y = (lorenz[k1] - y) * grid[k0 - l] + (y - lorenz[k0]) * lorenz[k1 - l];
+        y /= (lorenz[k1] - lorenz[k0]);
+    }
+#endif
+
+    // Fold, then adjust for critical point
+    if (left_branch) {
+        y = 1 - pow(1 - y, 1 / ctx.alpha);
+        y = y * lorenz[0];
+    } else {
+        y = pow(y, 1 / ctx.alpha);
+        y = lorenz[0] + (1 - lorenz[0]) * y;
+    }
 }
 
 template <typename scalar>
@@ -123,18 +173,56 @@ struct thurston_op {
     const context &ctx;
     const std::string &w0;
     const std::string &w1;
+    std::string knead0, knead1;
 
     thurston_op(vec<scalar> &family2d_, const context &ctx_,
             const std::string &w0_, const std::string &w1_)
-        : family2d(family2d_), ctx(ctx_), w0(w0_), w1(w1_) { }
+        : family2d(family2d_), ctx(ctx_), w0(w0_), w1(w1_)
+    {
+        knead0 = (w1 + w0).substr(1);
+        knead1 = (w0 + w1).substr(1);
+    }
 
     void guess(vec<scalar> &x)
     {
+        size_t n = w0.size() + w1.size();
+        x.resize(2 * n);
+#if 1   // Put critical values and their images in order
+        x.head(n) = vec<scalar>::LinSpaced(n, 0, crit(family2d));
+        x.tail(n) = vec<scalar>::LinSpaced(n, 1, crit(family2d));
+#else   // Put whole orbits in kneading sequence order
+        const scalar &c = crit(family2d);
+        x[n - 1] = x[2 * n - 1] = c;
+
+        for (size_t i = n - 1; i > 0; --i) {
+            x[i - 1] = 'L' == knead0[i - 1]
+                ? c - (1 - x[i]) * c : c + x[i] * (1 - c);
+            x[n + i - 1] = 'L' == knead1[i - 1]
+                ? c - (1 - x[n + i]) * c : c + x[n + i] * (1 - c);
+        }
+#endif
     }
 
     template <typename t>
     void operator() (const vec<t> &x, vec<t> *py) const
     {
+        size_t n0 = w0.size(), n1 = w1.size(), n = n0 + n1;
+
+        // Choose member of 2d family to pull back with
+        const t &v0 = x[1], &v1 = x[n + 1];
+        set_v(family2d, v0, v1);
+
+        vec<t> &y = *py;
+        y.resize(x.size());
+        for (size_t i = 0, j = 0; j < n - 1; ++i, ++j)
+            pull_back(y[i], x[i + 1], 'L' == knead0[j], family2d, ctx);
+        for (size_t i = n, j = 0; j < n - 1; ++i, ++j)
+            pull_back(y[i], x[i + 1], 'L' == knead1[j], family2d, ctx);
+
+        // Choose pull back so that (v0, v1) are fixed under renormalization
+        const t &l = x[n1 - 1], &r = x[n + n0 - 1];
+        y[n - 1] = l + v0 * (r - l);
+        y[2 * n - 1] = l + v1 * (r - l);
     }
 };
 
@@ -203,10 +291,10 @@ int main(int argc, char *argv[])
     std::string w0(argv[1]);
     std::string w1(argv[2]);
 #if USE_MPFR
-    // real c(argv[3]);
+    real c(argv[3]);
     real alpha(argv[4]);
 #else
-    // real c = atof(argv[3]);
+    real c = atof(argv[3]);
     real alpha = atof(argv[4]);
 #endif
     size_t diffeo_size = atoi(argv[5]);
@@ -217,9 +305,21 @@ int main(int argc, char *argv[])
     ctx.grid1.setLinSpaced(diffeo_size, 0, 1);
 
     vec<real> f0, f1;
+#if 1
+    init_lorenz(f0, ctx, c);
+    thurston_op<real> thurston(f0, ctx, w0, w1);
+    vec<real> pb0, pb1;
+    thurston.guess(pb0);
+    for (size_t i = 0; i < 10; ++i, pb0 = pb1) {
+        thurston(pb0, &pb1);
+        std::cerr << "[" << i << "] " << pb0.transpose() << std::endl;
+    }
+#else
     // init with (LRR, RL) fixed point of 3d operator
     init_lorenz(f0, ctx, 0.3306333708, 0.2518865473, 0.8414570392);
     // init_lorenz(f0, ctx, c, 0.1, 0.9);
+#endif
+
     init_lorenz(f1, ctx);
 
     renorm_op<real> renorm(ctx, w0, w1);
@@ -231,7 +331,7 @@ int main(int argc, char *argv[])
         drenorm(f0, &f1, &jac);
         std::cerr << "R^" << i << "(f) = " << f1.transpose() << std::endl;
         // std::cerr << jac << std::endl;
-        std::cerr << "eigvals = " << jac.eigenvalues().transpose() << std::endl;
+        // std::cerr << "eigvals = " << jac.eigenvalues().transpose() << std::endl;
         f0 = f1;
     }
 
