@@ -1,4 +1,4 @@
-#define USE_MPFR 0
+#define USE_MPFR 1
 
 #include <iostream>
 
@@ -279,8 +279,8 @@ struct renorm_op {
 
 int main(int argc, char *argv[])
 {
-    if (argc != 6) {
-        std::cerr << "usage: renorm w0 w1 c alpha n\n\n";
+    if (argc != 7) {
+        std::cerr << "usage: renorm w0 w1 c alpha n prec\n\n";
         exit(EXIT_FAILURE);
     }
 
@@ -289,6 +289,7 @@ int main(int argc, char *argv[])
 #if USE_MPFR
     real c(argv[3]);
     real alpha(argv[4]);
+    mpreal::set_default_prec(atoi(argv[6]));
 #else
     real c = atof(argv[3]);
     real alpha = atof(argv[4]);
@@ -313,21 +314,23 @@ int main(int argc, char *argv[])
     mat<real> jac(f0.size(), f0.size());
 
     for (size_t i = 0; i < 100; ++i, f0 = f1) {
-        for (size_t i = 0; i < 10000; ++i, pb0 = pb1)
+        for (size_t i = 0; i < 100; ++i, pb0 = pb1)
             thurston(pb0, &pb1);
         renorm(f0, &f1);
     }
 
     drenorm(f0, &f1, &jac);
     std::cerr << "R^0(f) = " << f0.transpose().head(10) << std::endl;
-    for (int i = 1; i <= 10; ++i, f0 = f1) {
+    for (int i = 1; i <= 40; ++i, f0 = f1) {
         renorm(f0, &f1);
         std::cerr << "R^" << i << "(f) = " << f1.transpose().head(10) <<
             std::endl;
     }
 
-    std::cerr << "|eigvals| = " << jac.eigenvalues().head(5).transpose() <<
-        std::endl;
+    // vec<real> evals = jac.eigenvalues().array().abs();
+    // std::sort(evals.data(), evals.data() + evals.size());
+    // evals.reverseInPlace();
+    // std::cerr << "|eigvals| = " << evals.transpose().head(5) << std::endl;
 
     return EXIT_SUCCESS;
 }
