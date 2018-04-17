@@ -301,35 +301,33 @@ int main(int argc, char *argv[])
     ctx.grid1.setLinSpaced(diffeo_size, 0, 1);
 
     vec<real> f0, f1;
-#if 1
     init_lorenz(f0, ctx, c);
+    init_lorenz(f1, ctx);
+
     thurston_op<real> thurston(f0, ctx, w0, w1);
     vec<real> pb0, pb1;
     thurston.guess(pb0);
-    for (size_t i = 0; i < 10; ++i, pb0 = pb1) {
-        thurston(pb0, &pb1);
-        std::cerr << "[" << i << "] " << pb0.transpose() << std::endl;
-    }
-#else
-    // init with (LRR, RL) fixed point of 3d operator
-    init_lorenz(f0, ctx, 0.3306333708, 0.2518865473, 0.8414570392);
-    // init_lorenz(f0, ctx, c, 0.1, 0.9);
-#endif
-
-    init_lorenz(f1, ctx);
 
     renorm_op<real> renorm(ctx, w0, w1);
     AutoDiffJacobian< renorm_op<real> > drenorm(renorm);
     mat<real> jac(f0.size(), f0.size());
 
-    std::cerr << "f = " << f0.transpose() << std::endl;
-    for (int i = 1; i <= 3; ++i) {
-        drenorm(f0, &f1, &jac);
-        std::cerr << "R^" << i << "(f) = " << f1.transpose() << std::endl;
-        // std::cerr << jac << std::endl;
-        // std::cerr << "eigvals = " << jac.eigenvalues().transpose() << std::endl;
-        f0 = f1;
+    for (size_t i = 0; i < 100; ++i, f0 = f1) {
+        for (size_t i = 0; i < 10000; ++i, pb0 = pb1)
+            thurston(pb0, &pb1);
+        renorm(f0, &f1);
     }
+
+    drenorm(f0, &f1, &jac);
+    std::cerr << "R^0(f) = " << f0.transpose().head(10) << std::endl;
+    for (int i = 1; i <= 10; ++i, f0 = f1) {
+        renorm(f0, &f1);
+        std::cerr << "R^" << i << "(f) = " << f1.transpose().head(10) <<
+            std::endl;
+    }
+
+    std::cerr << "|eigvals| = " << jac.eigenvalues().head(5).transpose() <<
+        std::endl;
 
     return EXIT_SUCCESS;
 }
