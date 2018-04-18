@@ -21,6 +21,8 @@ using namespace mpfr;
     exit(EXIT_FAILURE); \
 }
 
+#define clamp(x, x0, x1) ((x) < (x0) ? (x0) : ((x) > (x1) ? (x1) : (x)))
+
 
 using namespace Eigen;
 
@@ -126,6 +128,9 @@ void pull_back(scalar &y, const scalar &x, bool left_branch,
         k1 = k0 + ctx.grid1.size() - 1;
     }
 
+    // HACK! Avoid rounding errors
+    y = clamp(y, 0, 1);
+
     // Interpolate diffeomorphism
     if (lorenz.size() > 5 && y > 0 && y < 1) {
         const vec<real> &grid = left_branch ? ctx.grid0 : ctx.grid1;
@@ -221,7 +226,23 @@ struct thurston_op {
         size_t n0 = w0.size(), n1 = w1.size(), n = n0 + n1;
 
         // Choose member of 2d family to pull back with
+#if 1   // Assume shadow cycle is admissible
         const t &v0 = x[1], &v1 = x[n + 1];
+#else   // Sanity check: pick (v0, v1) so that all pull backs are defined
+        t v0 = x[1], v1 = x[n + 1];
+        for (size_t i = 0, j = 0; j < n - 1; ++i, ++j) {
+            if ('L' == knead0[j] && x[i + 1] < v0)
+                v0 = x[i + 1];
+            if ('R' == knead0[j] && x[i + 1] > v1)
+                v1 = x[i + 1];
+        }
+        for (size_t i = n, j = 0; j < n - 1; ++i, ++j) {
+            if ('L' == knead1[j] && x[i + 1] < v0)
+                v0 = x[i + 1];
+            if ('R' == knead1[j] && x[i + 1] > v1)
+                v1 = x[i + 1];
+        }
+#endif
         vec<t> lorenz(family2d);
         set_v(lorenz, v0, v1);
 
@@ -377,36 +398,41 @@ int main(int argc, char *argv[])
     for (size_t i = 0; i < 100; ++i) {
         std::cerr << "i = " << i << std::endl;
         thurston_op<real> thurston(f0, ctx, w0, w1);
-        for (size_t j = 0; j < 100; ++j, pb0 = pb1) {
+        real err2 = 1;
+        for (size_t j = 0; j < 1000; ++j, pb0 = pb1) {
             thurston(pb0, &pb1);
-            std::cerr << "\t[" << j << "] " << pb1.head(10).transpose() <<
-                std::endl;
+            err2 = (pb0 - pb1).squaredNorm();
+            // std::cerr << "\t[" << j << "] " << pb1.head(10).transpose() <<
+                // std::endl;
         }
         thurston.realization(f0, pb1);
         std::cerr << "thurston = " << f0.transpose().head(10) << std::endl;
+        std::cerr << "    err2 = " << err2 << std::endl;
+        if (99 == i)
+            break;
 
-        boundary_op<real> boundary(f0, ctx, w0, w1);
-        AutoDiffJacobian< boundary_op<real> > dboundary(boundary);
-        vec<real> p0(f0.head(3));
-        vec<real> p1(p0.size());
-        mat<real> bjac(p0.size(), p0.size());
-        real err2(1), eps2(1e-6);
+        if (i % 2) {
+            boundary_op<real> boundary(f0, ctx, w0, w1);
+            AutoDiffJacobian< boundary_op<real> > dboundary(boundary);
+            vec<real> p0(f0.head(3));
+            vec<real> p1(p0.size());
+            mat<real> bjac(p0.size(), p0.size());
 
-        while (err2 > eps2) {
-            dboundary(p0, &p1, &bjac);
-            vec<real> ph = bjac.fullPivLu().solve(p1);
-            p0 -= ph;
-            err2 = ph.squaredNorm();
-            std::cerr << "\t[" << err2 << "] " << p0.transpose() <<
-                std::endl;
+            for (int k = 0; k < 1; ++k) {
+                dboundary(p0, &p1, &bjac);
+                vec<real> ph = bjac.fullPivLu().solve(p1);
+                p0[0] -= ph[0];
+                // std::cerr << "\t[" << ph.squaredNorm() << "] " <<
+                //     p0.transpose() << std::endl;
+            }
+
+            boundary.realization(f0, p0);
+            std::cerr << "boundary = " << p0.transpose() << std::endl;
+        } else {
+            renorm(f0, &f1);
+            f0.tail(f0.size() - 3) = f1.tail(f0.size() - 3);
+            std::cerr << "renorm   = " << f1.transpose().head(10) << std::endl;
         }
-
-        boundary.realization(f0, p0);
-        std::cerr << "newton = " << f0.transpose().head(10) << std::endl;
-
-        renorm(f0, &f1);
-        f0.tail(f0.size() - 3) = f1.tail(f0.size() - 3);
-        std::cerr << "renorm = " << f0.transpose().head(10) << std::endl;
     }
 
     std::cerr << "\n========================\n" << std::endl;
