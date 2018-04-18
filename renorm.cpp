@@ -47,21 +47,11 @@ void init_lorenz(vec<scalar> &lorenz, const context &ctx, scalar c = 0.5,
     lorenz[0] = c;
     lorenz[1] = v0;
     lorenz[2] = v1;
-    lorenz.segment(3, ctx.grid0.size()) = ctx.grid0;
-    lorenz.tail(ctx.grid1.size()) = ctx.grid1;
-}
 
-template <typename scalar>
-const scalar &crit(const vec<scalar> &lorenz)
-{
-    return lorenz[0];
-}
-
-template <typename scalar>
-void set_v(vec<scalar> &lorenz, const scalar &v0, const scalar &v1)
-{
-    lorenz[1] = v0;
-    lorenz[2] = v1;
+    if (n > 3) {
+        lorenz.segment(3, ctx.grid0.size()) = ctx.grid0;
+        lorenz.tail(ctx.grid1.size()) = ctx.grid1;
+    }
 }
 
 template <typename scalar>
@@ -216,8 +206,8 @@ struct thurston_op {
     void realization(vec<scalar> &lorenz, const vec<scalar> &shadow_cycle)
     {
         lorenz = family2d;
-        set_v(lorenz, shadow_cycle[1],
-                shadow_cycle[w0.size() + w1.size() + 1]);
+        lorenz[1] = shadow_cycle[1];
+        lorenz[2] = shadow_cycle[w0.size() + w1.size() + 1];
     }
 
     template <typename t>
@@ -244,7 +234,8 @@ struct thurston_op {
         }
 #endif
         vec<t> lorenz(family2d);
-        set_v(lorenz, v0, v1);
+        lorenz[1] = v0;
+        lorenz[2] = v1;
 
         vec<t> &y = *py;
         y.resize(x.size());
@@ -336,26 +327,31 @@ struct renorm_op {
         // The return interval is [l, r] and the image of the first-return map
         // of f on this interval is [vl, vr]
         vec<t> &y = *py;
-        y[0] = (crit(x) - l) / (r - l);
+        y[0] = (x[0] - l) / (r - l);
         y[1] = (vl - l) / (r - l);
         y[2] = (vr - l) / (r - l);
 
-        // Endpoints of diffeos
-        y[3] = 0;
-        y[3 + ctx.grid0.size()] = 0;
-        y[3 + ctx.grid0.size() - 1] = 1;
-        y[3 + ctx.grid0.size() + ctx.grid1.size() - 1] = 1;
+        if (x.size() > 5) {
+            // Ensure endpoints of diffeos are fixed
+            y[3] = 0;
+            y[3 + ctx.grid0.size()] = 0;
+            y[3 + ctx.grid0.size() - 1] = 1;
+            y[3 + ctx.grid0.size() + ctx.grid1.size() - 1] = 1;
 
-        for (size_t k = 1; k < ctx.grid0.size() - 1; ++k) {
-            t p(l + (1 - pow(1 - ctx.grid0[k], 1 / ctx.alpha)) * (crit(x) - l));
-            iterate(p, p, n0, x, ctx);
-            y[3 + k] = (p - vl) / (r - vl);
-        }
+            // Left diffeo
+            for (size_t k = 1; k < ctx.grid0.size() - 1; ++k) {
+                t p(l + (1 - pow(1 - ctx.grid0[k], 1 / ctx.alpha)) *
+                        (x[0] - l));
+                iterate(p, p, n0, x, ctx);
+                y[3 + k] = (p - vl) / (r - vl);
+            }
 
-        for (size_t k = 1; k < ctx.grid1.size() - 1; ++k) {
-            t p(crit(x) + pow(ctx.grid0[k], 1 / ctx.alpha) * (r - crit(x)));
-            iterate(p, p, n1, x, ctx);
-            y[3 + ctx.grid0.size() + k] = (p - l) / (vr - l);
+            // Right diffeo
+            for (size_t k = 1; k < ctx.grid1.size() - 1; ++k) {
+                t p(x[0] + pow(ctx.grid0[k], 1 / ctx.alpha) * (r - x[0]));
+                iterate(p, p, n1, x, ctx);
+                y[3 + ctx.grid0.size() + k] = (p - l) / (vr - l);
+            }
         }
     }
 };
@@ -377,12 +373,16 @@ int main(int argc, char *argv[])
     real c = atof(argv[3]);
     real alpha = atof(argv[4]);
 #endif
-    size_t diffeo_size = atoi(argv[5]);
+    int diffeo_size = atoi(argv[5]);
+    if (diffeo_size < 3)
+        diffeo_size = 0;
 
     context ctx;
     ctx.alpha = alpha;
-    ctx.grid0.setLinSpaced(diffeo_size, 0, 1);
-    ctx.grid1.setLinSpaced(diffeo_size, 0, 1);
+    if (diffeo_size > 2) {
+        ctx.grid0.setLinSpaced(diffeo_size, 0, 1);
+        ctx.grid1.setLinSpaced(diffeo_size, 0, 1);
+    }
 
     vec<real> f0, f1;
     init_lorenz(f0, ctx, c);
@@ -402,11 +402,11 @@ int main(int argc, char *argv[])
         for (size_t j = 0; j < 1000; ++j, pb0 = pb1) {
             thurston(pb0, &pb1);
             err2 = (pb0 - pb1).squaredNorm();
-            // std::cerr << "\t[" << j << "] " << pb1.head(10).transpose() <<
+            // std::cerr << "\t[" << j << "] " << pb1.transpose() <<
                 // std::endl;
         }
         thurston.realization(f0, pb1);
-        std::cerr << "thurston = " << f0.transpose().head(10) << std::endl;
+        std::cerr << "thurston = " << f0.transpose() << std::endl;
         std::cerr << "    err2 = " << err2 << std::endl;
         if (99 == i)
             break;
@@ -431,7 +431,7 @@ int main(int argc, char *argv[])
         } else {
             renorm(f0, &f1);
             f0.tail(f0.size() - 3) = f1.tail(f0.size() - 3);
-            std::cerr << "renorm   = " << f1.transpose().head(10) << std::endl;
+            std::cerr << "renorm   = " << f1.transpose() << std::endl;
         }
     }
 
@@ -445,7 +445,7 @@ int main(int argc, char *argv[])
         thurston.realization(f0, pb1);
         renorm(f0, &f1);
     }
-    std::cerr << f0.transpose().head(10) << std::endl;
+    std::cerr << f0.transpose() << std::endl;
 
     for (size_t i = 0; i < 10; ++i) {
         // for (size_t i = 0; i < 100; ++i, pb0 = pb1)
@@ -454,15 +454,15 @@ int main(int argc, char *argv[])
         vec<real> h = (jac - mat<real>::Identity(f0.size(), f0.size())).fullPivLu().solve(f1 - f0);
         f0 -= h;
     }
-    std::cerr << f0.transpose().head(10) << std::endl;
+    std::cerr << f0.transpose() << std::endl;
     std::cerr << "\n========================\n" << std::endl;
 #endif
 
     drenorm(f0, &f1, &jac);
-    std::cerr << "R^0(f) = " << f0.transpose().head(10) << std::endl;
+    std::cerr << "R^0(f) = " << f0.transpose() << std::endl;
     for (int i = 1; i <= 1; ++i, f0 = f1) {
         renorm(f0, &f1);
-        std::cerr << "R^" << i << "(f) = " << f1.transpose().head(10) <<
+        std::cerr << "R^" << i << "(f) = " << f1.transpose() <<
             std::endl;
     }
 
