@@ -1,6 +1,7 @@
 #define USE_MPFR 1
 
 #include <iostream>
+#include <limits>
 
 #include <Eigen/Eigenvalues>
 #include <Eigen/LU>
@@ -368,11 +369,18 @@ int main(int argc, char *argv[])
 #if USE_MPFR
     real c(argv[3]);
     real alpha(argv[4]);
-    mpreal::set_default_prec(atoi(argv[6]));
+    int precision = atoi(argv[6]);
+
+    mpreal::set_default_prec(precision);
+    real eps = machine_epsilon(precision);
+    std::cerr << "eps = " << eps << std::endl;
 #else
     real c = atof(argv[3]);
     real alpha = atof(argv[4]);
+    real eps = std::numeric_limits<real>::epsilon();
 #endif
+    real desired_err2(pow(eps, 1.6));
+
     int diffeo_size = atoi(argv[5]);
     if (diffeo_size < 3)
         diffeo_size = 0;
@@ -399,7 +407,7 @@ int main(int argc, char *argv[])
         std::cerr << "i = " << i << std::endl;
         thurston_op<real> thurston(f0, ctx, w0, w1);
         real err2 = 1;
-        for (size_t j = 0; j < 1000; ++j, pb0 = pb1) {
+        for (size_t j = 0; j < 1000 && err2 > desired_err2; ++j, pb0 = pb1) {
             thurston(pb0, &pb1);
             err2 = (pb0 - pb1).squaredNorm();
             // std::cerr << "\t[" << j << "] " << pb1.transpose() <<
