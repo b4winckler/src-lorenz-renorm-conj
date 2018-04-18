@@ -161,17 +161,42 @@ void iterate(scalar &y, const scalar &x, size_t n, const vec<scalar> &lorenz, co
 }
 
 template <typename scalar>
+void thurston_guess(vec<scalar> &shadow_cycle, const std::string &w0,
+        const std::string &w1)
+{
+    size_t n = w0.size() + w1.size();
+    scalar c(0.5);
+    shadow_cycle.resize(2 * n);
+#if 1   // Put critical values and their images in order
+    shadow_cycle.head(n) = vec<scalar>::LinSpaced(n, 0, c);
+    shadow_cycle.tail(n) = vec<scalar>::LinSpaced(n, 1, c);
+#else   // Put whole orbits in kneading sequence order
+    shadow_cycle[n - 1] = shadow_cycle[2 * n - 1] = c;
+
+    for (size_t i = n - 1; i > 0; --i) {
+        shadow_cycle[i - 1] = 'L' == knead0[i - 1]
+            ?  c - (1 - shadow_cycle[i]) * c
+            : c + shadow_cycle[i] * (1 - c);
+        shadow_cycle[n + i - 1] = 'L' == knead1[i - 1]
+            ?  c - (1 - shadow_cycle[n + i]) * c
+            : c + shadow_cycle[n + i] * (1 - c);
+    }
+#endif
+}
+
+template <typename scalar>
 struct thurston_op {
     typedef vec<scalar> InputType;
     typedef vec<scalar> ValueType;
 
-    vec<real> &family2d;
-    const context &ctx;
-    const std::string &w0;
-    const std::string &w1;
-    std::string knead0, knead1;
+    vec<scalar> family2d;
+    context ctx;
+    std::string w0;
+    std::string w1;
+    std::string knead0;
+    std::string knead1;
 
-    thurston_op(vec<scalar> &family2d_, const context &ctx_,
+    thurston_op(const vec<scalar> &family2d_, const context &ctx_,
             const std::string &w0_, const std::string &w1_)
         : family2d(family2d_), ctx(ctx_), w0(w0_), w1(w1_)
     {
@@ -179,24 +204,11 @@ struct thurston_op {
         knead1 = (w0 + w1).substr(1);
     }
 
-    void guess(vec<scalar> &x)
+    void realization(vec<scalar> &lorenz, const vec<scalar> &shadow_cycle)
     {
-        size_t n = w0.size() + w1.size();
-        x.resize(2 * n);
-#if 1   // Put critical values and their images in order
-        x.head(n) = vec<scalar>::LinSpaced(n, 0, crit(family2d));
-        x.tail(n) = vec<scalar>::LinSpaced(n, 1, crit(family2d));
-#else   // Put whole orbits in kneading sequence order
-        const scalar &c = crit(family2d);
-        x[n - 1] = x[2 * n - 1] = c;
-
-        for (size_t i = n - 1; i > 0; --i) {
-            x[i - 1] = 'L' == knead0[i - 1]
-                ? c - (1 - x[i]) * c : c + x[i] * (1 - c);
-            x[n + i - 1] = 'L' == knead1[i - 1]
-                ? c - (1 - x[n + i]) * c : c + x[n + i] * (1 - c);
-        }
-#endif
+        lorenz = family2d;
+        set_v(lorenz, shadow_cycle[1],
+                shadow_cycle[w0.size() + w1.size() + 1]);
     }
 
     template <typename t>
@@ -206,14 +218,15 @@ struct thurston_op {
 
         // Choose member of 2d family to pull back with
         const t &v0 = x[1], &v1 = x[n + 1];
-        set_v(family2d, v0, v1);
+        vec<t> lorenz(family2d);
+        set_v(lorenz, v0, v1);
 
         vec<t> &y = *py;
         y.resize(x.size());
         for (size_t i = 0, j = 0; j < n - 1; ++i, ++j)
-            pull_back(y[i], x[i + 1], 'L' == knead0[j], family2d, ctx);
+            pull_back(y[i], x[i + 1], 'L' == knead0[j], lorenz, ctx);
         for (size_t i = n, j = 0; j < n - 1; ++i, ++j)
-            pull_back(y[i], x[i + 1], 'L' == knead1[j], family2d, ctx);
+            pull_back(y[i], x[i + 1], 'L' == knead1[j], lorenz, ctx);
 
         // Choose pull back so that (v0, v1) are fixed under renormalization
         const t &l = x[n1 - 1], &r = x[n + n0 - 1];
@@ -308,17 +321,18 @@ int main(int argc, char *argv[])
     init_lorenz(f0, ctx, c);
     init_lorenz(f1, ctx);
 
-    thurston_op<real> thurston(f0, ctx, w0, w1);
-    vec<real> pb0, pb1;
-    thurston.guess(pb0);
-
     renorm_op<real> renorm(ctx, w0, w1);
     AutoDiffJacobian< renorm_op<real> > drenorm(renorm);
     mat<real> jac(f0.size(), f0.size());
 
+    vec<real> pb0, pb1;
+    thurston_guess(pb0, w0, w1);
+
     for (size_t i = 0; i < 100; ++i, f0 = f1) {
+        thurston_op<real> thurston(f0, ctx, w0, w1);
         for (size_t i = 0; i < 100; ++i, pb0 = pb1)
             thurston(pb0, &pb1);
+        thurston.realization(f0, pb1);
         renorm(f0, &f1);
     }
     std::cerr << f0.transpose().head(10) << std::endl;
@@ -340,10 +354,10 @@ int main(int argc, char *argv[])
             std::endl;
     }
 
-    vec<real> evals = jac.eigenvalues().array().abs();
-    std::sort(evals.data(), evals.data() + evals.size());
-    evals.reverseInPlace();
-    std::cerr << "|eigvals| = " << evals.transpose().head(5) << std::endl;
+    // vec<real> evals = jac.eigenvalues().array().abs();
+    // std::sort(evals.data(), evals.data() + evals.size());
+    // evals.reverseInPlace();
+    // std::cerr << "|eigvals| = " << evals.transpose().head(5) << std::endl;
 
     return EXIT_SUCCESS;
 }
