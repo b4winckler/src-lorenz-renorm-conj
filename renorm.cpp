@@ -1,4 +1,4 @@
-#define USE_MPFR 0
+#define USE_MPFR 1
 
 #include <iostream>
 
@@ -17,9 +17,9 @@ using namespace mpfr;
 
 #define error(msg) \
 { \
-    std::cerr << __FILE__ << ':' << __LINE__ << ": " << (msg) << std::endl; \
+    std::cerr << __FILE__ << ':' << __LINE__ << ": " << msg << std::endl; \
     exit(EXIT_FAILURE); \
-} \
+}
 
 
 using namespace Eigen;
@@ -69,20 +69,24 @@ void apply(scalar &y, const scalar &x, const vec<scalar> &lorenz,
     // Adjust for critical point, then fold
     size_t i0, k0, k1;
     bool left_branch = x < lorenz[0];
+    bool right_branch = x > lorenz[0];
     if (left_branch) {
         y = x / lorenz[0];
         y = 1 - pow(1 - y, ctx.alpha);
         i0 = k0 = 3;
         k1 = k0 + ctx.grid0.size() - 1;
-    } else if (x > lorenz[0]) {
+    } else if (right_branch) {
         y = (x - lorenz[0]) / (1 - lorenz[0]);
         y = pow(y, ctx.alpha);
         i0 = k0 = 3 + ctx.grid0.size();
         k1 = k0 + ctx.grid1.size() - 1;
+    } else {
+        error("can't evaluate lorenz map at x = " << x <<
+                " (lorenz = " << lorenz.head(3).transpose() << ")");
     }
 
     // Interpolate diffeomorphism
-    if (y > 0 && y < 1) {
+    if (lorenz.size() > 5 && y > 0 && y < 1) {
         const vec<real> &grid = left_branch ? ctx.grid0 : ctx.grid1;
         size_t k;
         // With autodiff library it is not possible (?) to take the floor of y
@@ -123,7 +127,7 @@ void pull_back(scalar &y, const scalar &x, bool left_branch,
     }
 
     // Interpolate diffeomorphism
-    if (y > 0 && y < 1) {
+    if (lorenz.size() > 5 && y > 0 && y < 1) {
         const vec<real> &grid = left_branch ? ctx.grid0 : ctx.grid1;
         size_t k;
         // Search to find the interval on which to interpolate.
@@ -236,6 +240,51 @@ struct thurston_op {
 };
 
 template <typename scalar>
+struct boundary_op {
+    typedef vec<scalar> InputType;
+    typedef vec<scalar> ValueType;
+
+    vec<scalar> family3d;
+    context ctx;
+    std::string w0;
+    std::string w1;
+
+    boundary_op(const vec<scalar> &family3d_, const context &ctx_,
+            const std::string &w0_, const std::string &w1_)
+        : family3d(family3d_), ctx(ctx_), w0(w0_), w1(w1_) { }
+
+    void realization(vec<scalar> &lorenz, const vec<scalar> &x)
+    {
+        lorenz = family3d;
+        lorenz.head(3) = x;
+    }
+
+    template <typename t>
+    void operator() (const vec<t> &x, vec<t> *py) const
+    {
+        size_t n0 = w0.size(), n1 = w1.size();
+
+        vec<t> lorenz(family3d);
+        lorenz.head(3) = x;
+
+        // l = f^{n1 - 1)(0), vl = f^{n0}(l)
+        t l(0), vl;
+        iterate(l, l, n1 - 1, lorenz, ctx);
+        iterate(vl, l, n0, lorenz, ctx);
+
+        // r = f^{n0 - 1)(1), vr = f^{n1}(r)
+        t r(1), vr;
+        iterate(r, r, n0 - 1, lorenz, ctx);
+        iterate(vr, r, n1, lorenz, ctx);
+
+        vec<t> &y = *py;
+        y[0] = x[0] * (r - l - 1) + l;
+        y[1] = x[1] * (r - l) - vl + l,
+        y[2] = x[2] * (r - l) - vr + l;
+    }
+};
+
+template <typename scalar>
 struct renorm_op {
     typedef vec<scalar> InputType;
     typedef vec<scalar> ValueType;
@@ -269,9 +318,6 @@ struct renorm_op {
         y[0] = (crit(x) - l) / (r - l);
         y[1] = (vl - l) / (r - l);
         y[2] = (vr - l) / (r - l);
-        // y[0] = crit(x) * (r - l - 1) + l;
-        // y[1] = x[1] * (r - l) - vl + l,
-        // y[2] = x[2] * (r - l) - vr + l;
 
         // Endpoints of diffeos
         y[3] = 0;
@@ -321,13 +367,51 @@ int main(int argc, char *argv[])
     init_lorenz(f0, ctx, c);
     init_lorenz(f1, ctx);
 
+    vec<real> pb0, pb1;
+    thurston_guess(pb0, w0, w1);
+
     renorm_op<real> renorm(ctx, w0, w1);
     AutoDiffJacobian< renorm_op<real> > drenorm(renorm);
     mat<real> jac(f0.size(), f0.size());
 
-    vec<real> pb0, pb1;
-    thurston_guess(pb0, w0, w1);
+    for (size_t i = 0; i < 100; ++i) {
+        std::cerr << "i = " << i << std::endl;
+        thurston_op<real> thurston(f0, ctx, w0, w1);
+        for (size_t j = 0; j < 100; ++j, pb0 = pb1) {
+            thurston(pb0, &pb1);
+            std::cerr << "\t[" << j << "] " << pb1.head(10).transpose() <<
+                std::endl;
+        }
+        thurston.realization(f0, pb1);
+        std::cerr << "thurston = " << f0.transpose().head(10) << std::endl;
 
+        boundary_op<real> boundary(f0, ctx, w0, w1);
+        AutoDiffJacobian< boundary_op<real> > dboundary(boundary);
+        vec<real> p0(f0.head(3));
+        vec<real> p1(p0.size());
+        mat<real> bjac(p0.size(), p0.size());
+        real err2(1), eps2(1e-6);
+
+        while (err2 > eps2) {
+            dboundary(p0, &p1, &bjac);
+            vec<real> ph = bjac.fullPivLu().solve(p1);
+            p0 -= ph;
+            err2 = ph.squaredNorm();
+            std::cerr << "\t[" << err2 << "] " << p0.transpose() <<
+                std::endl;
+        }
+
+        boundary.realization(f0, p0);
+        std::cerr << "newton = " << f0.transpose().head(10) << std::endl;
+
+        renorm(f0, &f1);
+        f0.tail(f0.size() - 3) = f1.tail(f0.size() - 3);
+        std::cerr << "renorm = " << f0.transpose().head(10) << std::endl;
+    }
+
+    std::cerr << "\n========================\n" << std::endl;
+
+#if 0
     for (size_t i = 0; i < 100; ++i, f0 = f1) {
         thurston_op<real> thurston(f0, ctx, w0, w1);
         for (size_t i = 0; i < 100; ++i, pb0 = pb1)
@@ -345,6 +429,8 @@ int main(int argc, char *argv[])
         f0 -= h;
     }
     std::cerr << f0.transpose().head(10) << std::endl;
+    std::cerr << "\n========================\n" << std::endl;
+#endif
 
     drenorm(f0, &f1, &jac);
     std::cerr << "R^0(f) = " << f0.transpose().head(10) << std::endl;
