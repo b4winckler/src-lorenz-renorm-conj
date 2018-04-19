@@ -421,7 +421,11 @@ int main(int argc, char *argv[])
         if (99 == i)
             break;
 
-        if (i % 2) {
+        if (diffeo_size > 2 && i % 2) {
+            renorm(f0, &f1);
+            f0.tail(f0.size() - 3) = f1.tail(f0.size() - 3);
+            std::cerr << "renorm   = " << f1.transpose() << std::endl;
+        } else {
             boundary_op<real> boundary(f0, ctx, w0, w1);
             AutoDiffJacobian< boundary_op<real> > dboundary(boundary);
             vec<real> p0(f0.head(3));
@@ -438,10 +442,6 @@ int main(int argc, char *argv[])
 
             boundary.realization(f0, p0);
             std::cerr << "boundary = " << p0.transpose() << std::endl;
-        } else {
-            renorm(f0, &f1);
-            f0.tail(f0.size() - 3) = f1.tail(f0.size() - 3);
-            std::cerr << "renorm   = " << f1.transpose() << std::endl;
         }
     }
 
