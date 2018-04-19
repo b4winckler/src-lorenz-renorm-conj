@@ -359,8 +359,8 @@ struct renorm_op {
 
 int main(int argc, char *argv[])
 {
-    if (argc != 7) {
-        std::cerr << "usage: renorm w0 w1 c alpha n prec\n\n";
+    if (argc != 8) {
+        std::cerr << "usage: renorm w0 w1 c alpha ngrid prec niter\n\n";
         exit(EXIT_FAILURE);
     }
 
@@ -385,6 +385,8 @@ int main(int argc, char *argv[])
     if (diffeo_size < 3)
         diffeo_size = 0;
 
+    int niter = atoi(argv[7]);
+
     context ctx;
     ctx.alpha = alpha;
     if (diffeo_size > 2) {
@@ -403,7 +405,7 @@ int main(int argc, char *argv[])
     AutoDiffJacobian< renorm_op<real> > drenorm(renorm);
     mat<real> jac(f0.size(), f0.size());
 
-    for (size_t i = 0; i < 100; ++i) {
+    for (size_t i = 0; i < niter; ++i) {
         std::cerr << "i = " << i << std::endl;
         thurston_op<real> thurston(f0, ctx, w0, w1);
         real err2 = 1;
