@@ -445,27 +445,6 @@ int main(int argc, char *argv[])
 
     std::cerr << "\n========================\n" << std::endl;
 
-#if 0
-    for (size_t i = 0; i < 100; ++i, f0 = f1) {
-        thurston_op<real> thurston(f0, ctx, w0, w1);
-        for (size_t i = 0; i < 100; ++i, pb0 = pb1)
-            thurston(pb0, &pb1);
-        thurston.realization(f0, pb1);
-        renorm(f0, &f1);
-    }
-    std::cerr << f0.transpose() << std::endl;
-
-    for (size_t i = 0; i < 10; ++i) {
-        // for (size_t i = 0; i < 100; ++i, pb0 = pb1)
-        //     thurston(pb0, &pb1);
-        drenorm(f0, &f1, &jac);
-        vec<real> h = (jac - mat<real>::Identity(f0.size(), f0.size())).fullPivLu().solve(f1 - f0);
-        f0 -= h;
-    }
-    std::cerr << f0.transpose() << std::endl;
-    std::cerr << "\n========================\n" << std::endl;
-#endif
-
     drenorm(f0, &f1, &jac);
     std::cerr << "R^0(f) = " << f0.transpose() << std::endl;
     for (int i = 1; i <= 1; ++i, f0 = f1) {
