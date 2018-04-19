@@ -474,10 +474,10 @@ int main(int argc, char *argv[])
             std::endl;
     }
 
-    // vec<real> evals = jac.eigenvalues().array().abs();
-    // std::sort(evals.data(), evals.data() + evals.size());
-    // evals.reverseInPlace();
-    // std::cerr << "|eigvals| = " << evals.transpose().head(5) << std::endl;
+    vec<real> evals = jac.eigenvalues().array();
+    std::sort(evals.data(), evals.data() + evals.size(),
+            [](real a, real b) { return abs(a) > abs(b); } );
+    std::cerr << "eigvals = " << evals.transpose().head(3) << std::endl;
 
     return EXIT_SUCCESS;
 }
