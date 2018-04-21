@@ -462,3 +462,13 @@ int main(int argc, char *argv[])
 
     return EXIT_SUCCESS;
 }
+
+// TODO:
+// - number of thurston iter should depend on precision
+// - output in human readable form:
+//      * f = F(c, v, phi)
+//      * evaluation of f, Rf at the grid points (for plotting)
+//      * largest eigenvalues of DR at f, descending
+//      * distortion of phi?
+//      * ...?
+// - use library for faster eigenvalue estimates
