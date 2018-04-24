@@ -10,7 +10,7 @@
 int main(int argc, char *argv[])
 {
     if (argc != 8) {
-        std::cerr << "usage: renorm w0 w1 c alpha ngrid prec niter\n\n";
+        std::cerr << "usage: fixedpt w0 w1 c alpha ngrid prec niter\n\n";
         exit(EXIT_FAILURE);
     }
 
