@@ -1,7 +1,4 @@
 *.o
 .*.swp
-fixed
-lorenz
+fixedpt
 renorm
-test
-thurston
