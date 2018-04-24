@@ -4,7 +4,7 @@
 #include "lorenz.h"
 
 
-void read_line(vec<mpreal> &v)
+void read_vec(vec<mpreal> &v)
 {
     std::string line;
     std::getline(std::cin, line);
@@ -22,7 +22,7 @@ void read_line(vec<mpreal> &v)
 
 int main(int argc, char *argv[])
 {
-    if (argc != 8) {
+    if (argc != 6) {
         std::cerr << "usage: renorm w0 w1 nrenorm ngrid prec\n\n";
         exit(EXIT_FAILURE);
     }
@@ -34,14 +34,12 @@ int main(int argc, char *argv[])
     int precision = atoi(argv[5]);
 
     mpreal::set_default_prec(precision);
-    mpreal eps = machine_epsilon(precision);
-    std::cerr << "eps = " << eps << std::endl;
 
     vec<mpreal> ctx;
-    read_line(ctx);
+    read_vec(ctx);
 
     vec<mpreal> f;
-    read_line(f);
+    read_vec(f);
 
     vec<mpreal> rf;
     init_lorenz(rf, ctx);
@@ -50,15 +48,14 @@ int main(int argc, char *argv[])
 
     vec<mpreal> x0(ngrid), y0(ngrid);
     vec<mpreal> x1(ngrid), y1(ngrid);
-    size_t n0 = w0.size(), n1 = w1.size();
 
     for (int i = 0; i <= nrenorm; ++i, f = rf) {
         x0.setLinSpaced(ngrid, 0, f[0]);
         x1.setLinSpaced(ngrid, f[0], 1);
 
         for (size_t j = 1; j < ngrid - 1; ++j) {
-            iterate(y0[j], x0[j], n0, f, ctx);
-            iterate(y1[j], x1[j], n1, f, ctx);
+            apply(y0[j], x0[j], f, ctx);
+            apply(y1[j], x1[j], f, ctx);
         }
 
         y0[0] = f[1];
@@ -66,8 +63,8 @@ int main(int argc, char *argv[])
         y1[0] = 0;
         y1[ngrid - 1] = f[2];
 
-        std::cout << x0.transpose() << x1.transpose() << std::endl;
-        std::cout << y0.transpose() << y1.transpose() << std::endl;
+        print_vec(x0); std::cout << '\t'; print_vec(x1); std::cout << std::endl;
+        print_vec(y0); std::cout << '\t'; print_vec(y1); std::cout << std::endl;
 
         renorm(f, &rf);
     }
