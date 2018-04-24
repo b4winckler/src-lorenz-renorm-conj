@@ -333,3 +333,14 @@ struct renorm_op {
         }
     }
 };
+
+template <typename scalar>
+void print_vec(const vec<scalar> &x)
+{
+    if (x.size() == 0)
+        return;
+
+    std::cout << x[0];
+    for (size_t i = 1; i < x.size(); ++i)
+        std::cout << '\t' << x[i];
+}

@@ -58,7 +58,7 @@ int main(int argc, char *argv[])
         thurston.realization(f0, pb1);
         std::cerr << "thurston = " << f0.transpose() << std::endl;
         std::cerr << "    err2 = " << err2 << std::endl;
-        if (99 == i)
+        if (niter - 1 == i)
             break;
 
         if (diffeo_size > 2 && i % 2) {
@@ -86,6 +86,9 @@ int main(int argc, char *argv[])
     }
 
     std::cerr << "\n========================\n" << std::endl;
+
+    print_vec(ctx); std::cout << std::endl;
+    print_vec(f0); std::cout << std::endl;
 
     drenorm(f0, &f1, &jac);
     std::cerr << "R^0(f) = " << f0.transpose() << std::endl;
