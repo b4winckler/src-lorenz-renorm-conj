@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
     print_vec(ctx); std::cout << std::endl;
     print_vec(f0); std::cout << std::endl;
 
-    drenorm(f0, &f1, &jac);
+    // drenorm(f0, &f1, &jac);
     std::cerr << "R^0(f) = " << f0.transpose() << std::endl;
     for (int i = 1; i <= 1; ++i, f0 = f1) {
         renorm(f0, &f1);
@@ -98,10 +98,10 @@ int main(int argc, char *argv[])
             std::endl;
     }
 
-    vec<mpreal> evals = jac.topLeftCorner(3, 3).eigenvalues().array();
-    std::sort(evals.data(), evals.data() + evals.size(),
-            [](mpreal a, mpreal b) { return abs(a) > abs(b); } );
-    std::cerr << "eigvals = " << evals.transpose().head(3) << std::endl;
+    // vec<mpreal> evals = jac.topLeftCorner(3, 3).eigenvalues().array();
+    // std::sort(evals.data(), evals.data() + evals.size(),
+    //         [](mpreal a, mpreal b) { return abs(a) > abs(b); } );
+    // std::cerr << "eigvals = " << evals.transpose().head(3) << std::endl;
 
     return EXIT_SUCCESS;
 }
