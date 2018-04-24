@@ -31,12 +31,8 @@ int main(int argc, char *argv[])
 
     int niter = atoi(argv[7]);
 
-    context ctx;
-    ctx.alpha = alpha;
-    if (diffeo_size > 2) {
-        ctx.grid0.setLinSpaced(diffeo_size, 0, 1);
-        ctx.grid1.setLinSpaced(diffeo_size, 0, 1);
-    }
+    vec<mpreal> ctx;
+    init_context(ctx, diffeo_size, alpha);
 
     vec<mpreal> f0, f1;
     init_lorenz(f0, ctx, c);
