@@ -98,7 +98,7 @@ int main(int argc, char *argv[])
             std::endl;
     }
 
-    vec<mpreal> evals = jac.eigenvalues().array();
+    vec<mpreal> evals = jac.topLeftCorner(3, 3).eigenvalues().array();
     std::sort(evals.data(), evals.data() + evals.size(),
             [](mpreal a, mpreal b) { return abs(a) > abs(b); } );
     std::cerr << "eigvals = " << evals.transpose().head(3) << std::endl;
