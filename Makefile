@@ -5,17 +5,17 @@ LDLIBS += -lmpfr -lgmp
 
 FIXED_OBJS = fixed.o
 LORENZ_OBJS = lorenz.o
-RENORM_OBJS = renorm.o
+FIXEDPT_OBJS = fixedpt.o
 THURSTON_OBJS = thurston.o
-OBJS = $(FIXED_OBJS) $(LORENZ_OBJS) $(RENORM_OBJS) $(THURSTON_OBJS)
+OBJS = $(FIXED_OBJS) $(LORENZ_OBJS) $(FIXEDPT_OBJS) $(THURSTON_OBJS)
 
-all: fixed lorenz renorm thurston
+all: fixed lorenz fixedpt thurston
 
 fixed: $(FIXED_OBJS)
 
 lorenz: $(LORENZ_OBJS)
 
-renorm: $(RENORM_OBJS)
+fixedpt: $(FIXEDPT_OBJS)
 
 thurston: $(THURSTON_OBJS)
 
