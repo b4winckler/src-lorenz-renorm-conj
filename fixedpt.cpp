@@ -1,19 +1,13 @@
-#define USE_MPFR 1
-
 #include <iostream>
 #include <limits>
 
 #include <Eigen/Eigenvalues>
 #include <Eigen/LU>
 #include <unsupported/Eigen/AutoDiff>
-
-#if USE_MPFR
 #include <unsupported/Eigen/MPRealSupport>
-#define real mpreal
+
+using namespace Eigen;
 using namespace mpfr;
-#else
-#define real double
-#endif
 
 
 #define error(msg) \
@@ -25,17 +19,14 @@ using namespace mpfr;
 #define clamp(x, x0, x1) ((x) < (x0) ? (x0) : ((x) > (x1) ? (x1) : (x)))
 
 
-using namespace Eigen;
-
-
 template <typename t> using vec = Matrix<t, Dynamic, 1>;
 template <typename t> using mat = Matrix<t, Dynamic, Dynamic>;
 
 
 struct context {
-    real alpha;
-    vec<real> grid0;
-    vec<real> grid1;
+    mpreal alpha;
+    vec<mpreal> grid0;
+    vec<mpreal> grid1;
 };
 
 
@@ -80,7 +71,7 @@ void apply(scalar &y, const scalar &x, const vec<scalar> &lorenz,
 
     // Interpolate diffeomorphism
     if (lorenz.size() > 5 && y > 0 && y < 1) {
-        const vec<real> &grid = left_branch ? ctx.grid0 : ctx.grid1;
+        const vec<mpreal> &grid = left_branch ? ctx.grid0 : ctx.grid1;
         size_t k;
         // With autodiff library it is not possible (?) to take the floor of y
         // so we need to search to find the interval on which to interpolate.
@@ -124,7 +115,7 @@ void pull_back(scalar &y, const scalar &x, bool left_branch,
 
     // Interpolate diffeomorphism
     if (lorenz.size() > 5 && y > 0 && y < 1) {
-        const vec<real> &grid = left_branch ? ctx.grid0 : ctx.grid1;
+        const vec<mpreal> &grid = left_branch ? ctx.grid0 : ctx.grid1;
         size_t k;
         // Search to find the interval on which to interpolate.
         while (k1 > k0 + 1) {
@@ -366,20 +357,14 @@ int main(int argc, char *argv[])
 
     std::string w0(argv[1]);
     std::string w1(argv[2]);
-#if USE_MPFR
-    real c(argv[3]);
-    real alpha(argv[4]);
+    mpreal c(argv[3]);
+    mpreal alpha(argv[4]);
     int precision = atoi(argv[6]);
 
     mpreal::set_default_prec(precision);
-    real eps = machine_epsilon(precision);
+    mpreal eps = machine_epsilon(precision);
     std::cerr << "eps = " << eps << std::endl;
-#else
-    real c = atof(argv[3]);
-    real alpha = atof(argv[4]);
-    real eps = std::numeric_limits<real>::epsilon();
-#endif
-    real desired_err2(pow(eps, 1.6));
+    mpreal desired_err2(pow(eps, 1.6));
 
     int diffeo_size = atoi(argv[5]);
     if (diffeo_size < 3)
@@ -394,21 +379,21 @@ int main(int argc, char *argv[])
         ctx.grid1.setLinSpaced(diffeo_size, 0, 1);
     }
 
-    vec<real> f0, f1;
+    vec<mpreal> f0, f1;
     init_lorenz(f0, ctx, c);
     init_lorenz(f1, ctx);
 
-    vec<real> pb0, pb1;
+    vec<mpreal> pb0, pb1;
     thurston_guess(pb0, w0, w1);
 
-    renorm_op<real> renorm(ctx, w0, w1);
-    AutoDiffJacobian< renorm_op<real> > drenorm(renorm);
-    mat<real> jac(f0.size(), f0.size());
+    renorm_op<mpreal> renorm(ctx, w0, w1);
+    AutoDiffJacobian< renorm_op<mpreal> > drenorm(renorm);
+    mat<mpreal> jac(f0.size(), f0.size());
 
     for (size_t i = 0; i < niter; ++i) {
         std::cerr << "i = " << i << std::endl;
-        thurston_op<real> thurston(f0, ctx, w0, w1);
-        real err2 = 1;
+        thurston_op<mpreal> thurston(f0, ctx, w0, w1);
+        mpreal err2 = 1;
         for (size_t j = 0; j < 1000 && err2 > desired_err2; ++j, pb0 = pb1) {
             thurston(pb0, &pb1);
             err2 = (pb0 - pb1).squaredNorm();
@@ -426,15 +411,15 @@ int main(int argc, char *argv[])
             f0.tail(f0.size() - 3) = f1.tail(f0.size() - 3);
             std::cerr << "renorm   = " << f1.transpose() << std::endl;
         } else {
-            boundary_op<real> boundary(f0, ctx, w0, w1);
-            AutoDiffJacobian< boundary_op<real> > dboundary(boundary);
-            vec<real> p0(f0.head(3));
-            vec<real> p1(p0.size());
-            mat<real> bjac(p0.size(), p0.size());
+            boundary_op<mpreal> boundary(f0, ctx, w0, w1);
+            AutoDiffJacobian< boundary_op<mpreal> > dboundary(boundary);
+            vec<mpreal> p0(f0.head(3));
+            vec<mpreal> p1(p0.size());
+            mat<mpreal> bjac(p0.size(), p0.size());
 
             for (int k = 0; k < 1; ++k) {
                 dboundary(p0, &p1, &bjac);
-                vec<real> ph = bjac.fullPivLu().solve(p1);
+                vec<mpreal> ph = bjac.fullPivLu().solve(p1);
                 p0[0] -= ph[0];
                 // std::cerr << "\t[" << ph.squaredNorm() << "] " <<
                 //     p0.transpose() << std::endl;
@@ -455,9 +440,9 @@ int main(int argc, char *argv[])
             std::endl;
     }
 
-    vec<real> evals = jac.eigenvalues().array();
+    vec<mpreal> evals = jac.eigenvalues().array();
     std::sort(evals.data(), evals.data() + evals.size(),
-            [](real a, real b) { return abs(a) > abs(b); } );
+            [](mpreal a, mpreal b) { return abs(a) > abs(b); } );
     std::cerr << "eigvals = " << evals.transpose().head(3) << std::endl;
 
     return EXIT_SUCCESS;
