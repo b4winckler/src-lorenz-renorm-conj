@@ -7,7 +7,7 @@ FIXEDPT_OBJS = fixedpt.o
 RENORM_OBJS = renorm.o
 OBJS = $(FIXEDPT_OBJS) $(RENORM_OBJS)
 
-all: fixedpt renorm
+all: fixedpt renorm lorenz.h
 
 fixedpt: $(FIXEDPT_OBJS)
 
