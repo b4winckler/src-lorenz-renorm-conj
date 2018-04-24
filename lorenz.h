@@ -340,7 +340,24 @@ void print_vec(const vec<scalar> &x)
     if (x.size() == 0)
         return;
 
-    std::cout << x[0];
+    std::cout << x[0].toString();
     for (size_t i = 1; i < x.size(); ++i)
-        std::cout << '\t' << x[i];
+        std::cout << '\t' << x[i].toString();
+}
+
+template <typename scalar>
+void read_vec(vec<scalar> &v)
+{
+    std::string line;
+    std::getline(std::cin, line);
+    std::istringstream ss(line);
+
+    std::vector<scalar> xs;
+    scalar x;
+    while (ss >> x)
+        xs.push_back(x);
+
+    v.resize(xs.size());
+    for (size_t i = 0; i < xs.size(); ++i)
+        v[i] = xs[i];
 }
