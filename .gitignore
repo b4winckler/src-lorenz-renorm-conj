@@ -2,3 +2,5 @@
 .*.swp
 fixedpt
 renorm
+ephemeral/
+obsolete/ephemeral
