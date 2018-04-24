@@ -280,9 +280,9 @@ struct renorm_op {
     typedef vec<scalar> InputType;
     typedef vec<scalar> ValueType;
 
-    const vec<scalar> &ctx;
-    const std::string &w0;
-    const std::string &w1;
+    vec<scalar> ctx;
+    std::string w0;
+    std::string w1;
 
     renorm_op(const vec<scalar> &ctx_, const std::string &w0_,
             const std::string &w1_)
