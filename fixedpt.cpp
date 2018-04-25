@@ -1,4 +1,5 @@
 #include <iostream>
+#include <csignal>
 
 #include <Eigen/Eigenvalues>
 #include <Eigen/LU>
@@ -15,7 +16,7 @@ static char usage[] =
 "and 'prec' bits of precision are used for the calculations (and output).\n"
 "The critical point 'c' is used as an initial guess.  The parameter 'niter'\n"
 "determines how many times to iterate (more iterates lead to a better\n"
-"approximation).\n"
+"approximation).  CTRL-C exists iteration prematurely and prints results.\n"
 "\n"
 "Output:\n"
 "\n"
@@ -25,6 +26,14 @@ static char usage[] =
 "The coordinates (xk,yk) give piecewise linear approximations of the\n"
 "diffeomorphisms.\n";
 
+
+volatile std::sig_atomic_t signal_status = 0;
+
+
+void signal_handler(int signal)
+{
+    signal_status = signal;
+}
 
 int main(int argc, char *argv[])
 {
@@ -63,6 +72,8 @@ int main(int argc, char *argv[])
     AutoDiffJacobian< renorm_op<mpreal> > drenorm(renorm);
     mat<mpreal> jac(f0.size(), f0.size());
 
+    std::signal(SIGINT, signal_handler);
+
     for (size_t i = 0; i < niter; ++i) {
         std::cerr << "[" << i << "]";
         thurston_op<mpreal> thurston(f0, ctx, w0, w1);
@@ -76,7 +87,7 @@ int main(int argc, char *argv[])
 
         // Iteration should end with a Thurston step since it makes the error
         // smaller whereas the other two steps make the error worse.
-        if (niter - 1 == i) {
+        if (niter - 1 == i || SIGINT == signal_status) {
             std::cerr << std::endl;
             break;
         }
