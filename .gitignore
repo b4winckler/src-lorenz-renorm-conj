@@ -1,5 +1,6 @@
 *.o
 .*.swp
+deriv
 fixedpt
 renorm
 ephemeral/

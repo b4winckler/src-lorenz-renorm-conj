@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include <unsupported/Eigen/MPRealSupport>
 
 using namespace Eigen;
