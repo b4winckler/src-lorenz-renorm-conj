@@ -7,7 +7,7 @@ FIXEDPT_OBJS = fixedpt.o
 RENORM_OBJS = renorm.o
 OBJS = $(FIXEDPT_OBJS) $(RENORM_OBJS)
 
-all: fixedpt renorm lorenz.h
+all: fixedpt renorm
 
 fixedpt: $(FIXEDPT_OBJS)
 
@@ -15,3 +15,6 @@ renorm: $(RENORM_OBJS)
 
 clean:
 	rm -f $(OBJS)
+
+%.o: %.cpp lorenz.h
+	$(CXX) $(CXXFLAGS) -o $@ -c $<
