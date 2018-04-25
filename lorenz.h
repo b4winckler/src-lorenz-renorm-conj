@@ -233,7 +233,7 @@ struct thurston_op {
 };
 
 template <typename scalar>
-struct boundary_op {
+struct modrenorm_op {
     typedef vec<scalar> InputType;
     typedef vec<scalar> ValueType;
 
@@ -242,7 +242,7 @@ struct boundary_op {
     std::string w0;
     std::string w1;
 
-    boundary_op(const vec<scalar> &family3d_, const vec<scalar> &ctx_,
+    modrenorm_op(const vec<scalar> &family3d_, const vec<scalar> &ctx_,
             const std::string &w0_, const std::string &w1_)
         : family3d(family3d_), ctx(ctx_), w0(w0_), w1(w1_) { }
 

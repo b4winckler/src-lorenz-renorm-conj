@@ -101,17 +101,17 @@ int main(int argc, char *argv[])
             std::cerr << "\tdiffeo error = " << err;
         } else {
             // Take Newton step with modified renorm operator on c
-            boundary_op<mpreal> boundary(f0, ctx, w0, w1);
-            AutoDiffJacobian< boundary_op<mpreal> > dboundary(boundary);
+            modrenorm_op<mpreal> modrenorm(f0, ctx, w0, w1);
+            AutoDiffJacobian< modrenorm_op<mpreal> > dmodrenorm(modrenorm);
             vec<mpreal> p0(f0.head(3));
             vec<mpreal> p1(p0.size());
             mat<mpreal> bjac(p0.size(), p0.size());
 
-            dboundary(p0, &p1, &bjac);
+            dmodrenorm(p0, &p1, &bjac);
             vec<mpreal> ph = bjac.fullPivLu().solve(p1);
             p0[0] -= ph[0];
 
-            boundary.realization(f0, p0);
+            modrenorm.realization(f0, p0);
             std::cerr << "\tcritpt error = " << abs(ph[0]);
         }
         std::cerr << std::endl;
