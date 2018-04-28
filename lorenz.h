@@ -21,6 +21,8 @@ template <typename t> using vec = Matrix<t, Dynamic, 1>;
 template <typename t> using mat = Matrix<t, Dynamic, Dynamic>;
 
 
+// A context holds the critical exponent alpha and the x-coordinates used for
+// interpolating the diffeomorphisms.
 template <typename scalar>
 void init_context(vec<scalar> &ctx, size_t n, const scalar &alpha)
 {
@@ -30,6 +32,8 @@ void init_context(vec<scalar> &ctx, size_t n, const scalar &alpha)
     ctx.tail(n) = vec<scalar>::LinSpaced(n, 0, 1);
 }
 
+// A Lorenz map holds the critical point c, boundary values (v0, v1), and the
+// y-coordinates used for interpolating the diffeomorphisms.
 template <typename scalar>
 void init_lorenz(vec<scalar> &lorenz, const vec<scalar> &ctx, scalar c = 0.5,
         scalar v0 = 0, scalar v1 = 1)
@@ -141,29 +145,17 @@ void iterate(derived &y, const derived &x, size_t n,
 }
 
 template <typename scalar>
-void thurston_guess(vec<scalar> &shadow_cycle, const std::string &w0,
+void thurston_guess(vec<scalar> &shadow_orbit, const std::string &w0,
         const std::string &w1)
 {
     size_t n = w0.size() + w1.size();
     scalar c(0.5);
-    shadow_cycle.resize(2 * n);
-#if 1   // Put critical values and their images in order
-    shadow_cycle.head(n) = vec<scalar>::LinSpaced(n, 0, c);
-    shadow_cycle.tail(n) = vec<scalar>::LinSpaced(n, 1, c);
-#else   // Put whole orbits in kneading sequence order
-    shadow_cycle[n - 1] = shadow_cycle[2 * n - 1] = c;
-
-    for (size_t i = n - 1; i > 0; --i) {
-        shadow_cycle[i - 1] = 'L' == knead0[i - 1]
-            ?  c - (1 - shadow_cycle[i]) * c
-            : c + shadow_cycle[i] * (1 - c);
-        shadow_cycle[n + i - 1] = 'L' == knead1[i - 1]
-            ?  c - (1 - shadow_cycle[n + i]) * c
-            : c + shadow_cycle[n + i] * (1 - c);
-    }
-#endif
+    shadow_orbit.resize(2 * n);
+    shadow_orbit.head(n) = vec<scalar>::LinSpaced(n, 0, c);
+    shadow_orbit.tail(n) = vec<scalar>::LinSpaced(n, 1, c);
 }
 
+// The strange design of this code is due to interface with AutoDiff lib
 template <typename scalar>
 struct thurston_op {
     typedef vec<scalar> InputType;
@@ -184,11 +176,11 @@ struct thurston_op {
         knead1 = (w0 + w1).substr(1);
     }
 
-    void realization(vec<scalar> &lorenz, const vec<scalar> &shadow_cycle)
+    void realization(vec<scalar> &lorenz, const vec<scalar> &shadow_orbit)
     {
         lorenz = family2d;
-        lorenz[1] = shadow_cycle[1];
-        lorenz[2] = shadow_cycle[w0.size() + w1.size() + 1];
+        lorenz[1] = shadow_orbit[1];
+        lorenz[2] = shadow_orbit[w0.size() + w1.size() + 1];
     }
 
     template <typename derived>
@@ -197,23 +189,7 @@ struct thurston_op {
         size_t n0 = w0.size(), n1 = w1.size(), n = n0 + n1;
 
         // Choose member of 2d family to pull back with
-#if 1   // Assume shadow cycle is admissible
         const derived &v0 = x[1], &v1 = x[n + 1];
-#else   // Sanity check: pick (v0, v1) so that all pull backs are defined
-        derived v0 = x[1], v1 = x[n + 1];
-        for (size_t i = 0, j = 0; j < n - 1; ++i, ++j) {
-            if ('L' == knead0[j] && x[i + 1] < v0)
-                v0 = x[i + 1];
-            if ('R' == knead0[j] && x[i + 1] > v1)
-                v1 = x[i + 1];
-        }
-        for (size_t i = n, j = 0; j < n - 1; ++i, ++j) {
-            if ('L' == knead1[j] && x[i + 1] < v0)
-                v0 = x[i + 1];
-            if ('R' == knead1[j] && x[i + 1] > v1)
-                v1 = x[i + 1];
-        }
-#endif
         vec<derived> lorenz(family2d);
         lorenz[1] = v0;
         lorenz[2] = v1;
@@ -232,6 +208,7 @@ struct thurston_op {
     }
 };
 
+// The strange design of this code is due to interface with AutoDiff lib
 template <typename scalar>
 struct modrenorm_op {
     typedef vec<scalar> InputType;
@@ -277,6 +254,7 @@ struct modrenorm_op {
     }
 };
 
+// The strange design of this code is due to interface with AutoDiff lib
 template <typename scalar>
 struct renorm_op {
     typedef vec<scalar> InputType;
