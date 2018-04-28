@@ -69,8 +69,6 @@ int main(int argc, char *argv[])
     thurston_guess(pb0, w0, w1);
 
     renorm_op<mpreal> renorm(ctx, w0, w1);
-    AutoDiffJacobian< renorm_op<mpreal> > drenorm(renorm);
-    mat<mpreal> jac(f0.size(), f0.size());
 
     std::signal(SIGINT, signal_handler);
 
@@ -122,18 +120,12 @@ int main(int argc, char *argv[])
     print_vec(f0); std::cout << std::endl;
 
     // Log some more information to confirm fixed point
-    // drenorm(f0, &f1, &jac);
     std::cerr << "R^0(f) = " << f0.head(3).transpose() << std::endl;
     for (int i = 1; i <= 3; ++i, f0 = f1) {
         renorm(f0, &f1);
         std::cerr << "R^" << i << "(f) = " << f1.head(3).transpose() <<
             std::endl;
     }
-
-    // vec<mpreal> evals = jac.topLeftCorner(3, 3).eigenvalues().array();
-    // std::sort(evals.data(), evals.data() + evals.size(),
-    //         [](mpreal a, mpreal b) { return abs(a) > abs(b); } );
-    // std::cerr << "eigvals = " << evals.transpose().head(3) << std::endl;
 
     return EXIT_SUCCESS;
 }
