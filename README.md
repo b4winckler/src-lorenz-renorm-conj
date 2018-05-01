@@ -107,3 +107,10 @@ eigenvalues for many (a,b) times at once.
 # License
 
 Copyright (c) 2018 Bjorn Winckler, see COPYING for license details.
+
+
+# Acknowledgement
+
+This project has received funding from the European Union's Horizon 2020
+research and innovation programme under the Marie Sklodowska-Curie grant
+agreement No 743959.
