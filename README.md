@@ -1,6 +1,6 @@
 # What is this?
 
-Programs that accompany the article [The Lorenz Renormalization Conjecture](`https://arxiv.org/abs/1805.01226`).
+Programs that accompany the article [The Lorenz Renormalization Conjecture](https://arxiv.org/abs/1805.01226).
 
 
 # Building
@@ -13,7 +13,7 @@ Dependencies:
 *   The GNU MPFR and GMP libraries (tested with macOS Homebrew installs)
 
 If you are running macOS and do not have these installed, go to the
-[Homebrew website](`https://brew.sh`) and follow the installation instructions.
+[Homebrew website](https://brew.sh) and follow the installation instructions.
 Once Homebrew has finished installing, install mpfr and gmp with
 `brew install gmp mpfr`.  Now you should be able to run `make`.
 
