@@ -49,7 +49,7 @@ This should print something like:
 ```
 The first two are the unstable eigenvalues associated with moving the critical
 values; the last is the eigenvalue associated with moving the critical point.
-This is an example of type A in the renormalization conjecture.
+This is an example of type A in the Lorenz Renormalization Conjecture.
 
 Plot column 1 vs 2 (for f), and column 3 vs 4 (for Rf).  For example, here's
 how to do it in R:
@@ -96,6 +96,7 @@ lines(df$x2, df$y2, col='green')
 ```
 You should see a green and a red graph; the green will have covered over the
 blue since R^2(f) = f.
+This is an example of type C in the Lorenz Renormalization Conjecture.
 
 
 ## Example: scripting
