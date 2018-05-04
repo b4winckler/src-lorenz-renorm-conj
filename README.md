@@ -1,6 +1,6 @@
 # What is this?
 
-Programs that accompany the article "The Lorenz Renormalization Conjecture".
+Programs that accompany the article [The Lorenz Renormalization Conjecture](`https://arxiv.org/abs/1805.01226`).
 
 
 # Building
